@@ -3,6 +3,17 @@
 Agent tool contracts (`contracts/`) and their b10x default implementations (`crates/tool-*`). This
 file is for agents working on this repository; `README.md` is for people.
 
+## Serves
+
+- **O1 — governed reach.** A contract declares each operation's effects, consequences, risk,
+  bounds and the Canon capability it serves before any run, so whatever binds and invokes the tool
+  checks a call against declared properties instead of inferred ones.
+- **O2 — decisions as data, with evidence.** A contract is an ESS command plus the
+  `tool-contract/1` profile, and "implements" is a passing conformance run, not a claim.
+- **O3 — any harness, observed and compared.** Harnesses that adopt a toolset call the same
+  operations under the same names and properties, so their tool calls are recorded in one
+  vocabulary and can be compared on the same work.
+
 ## Start here
 
 | read | for |
