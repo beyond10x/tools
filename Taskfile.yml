@@ -1,0 +1,11 @@
+version: '3'
+
+tasks:
+  default:
+    cmds:
+      - task: check
+
+  check:
+    desc: Planning store validation; contract validation and crate tests join as they land.
+    cmds:
+      - aep plan artifact validate
