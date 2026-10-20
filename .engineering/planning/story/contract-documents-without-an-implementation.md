@@ -13,7 +13,7 @@ scope:
   path: crates/tool-contract
 - confidence: cited
   path: crates/tool-fs/src/toolset.rs
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-20T07:48:36Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-20T07:48:36Z", actor: "human:timo", revision: 4}
@@ -27,12 +27,14 @@ Apache-2.0 crate `b10x-tool-contract` alone, without depending on an implementat
 
 - In tools 0.1.0 the contract documents are embedded only by the implementation crates:
   `crates/tool-fs/src/toolset.rs:20` and `crates/tool-code-editor/src/lib.rs:39-40`
-  (`include_str!` of `contracts/<toolset>/v1alpha1/contract.yaml`). Both crates are
+  (`include_str!` of `contracts/<toolset>/v1alpha1/contract.yaml`). 0.1.0 released both crates as
   `LicenseRef-B10x-Proprietary`; `crates/tool-contract/Cargo.toml:4` is `Apache-2.0`.
-- The first adopter that may link only the Apache-2.0 crate needs the contract's command names and
+- The first adopter that linked only the Apache-2.0 crate needs the contract's command names and
   input schemas for its published catalogue, and reaches neither through `b10x-tool-contract` today.
-- `docs/design/tool-contracts.md`: a contract names no implementation; reaching it only through one
-  inverts that.
+- 2026-10-20, later the same day: the owner relicensed the crates moved from harness Apache-2.0
+  for 0.2.0 (`CHANGELOG.md` § Unreleased). The story stands on the design alone:
+  `docs/design/tool-contracts.md` says a contract names no implementation, and reaching it only
+  through one inverts that.
 
 ## Scope
 

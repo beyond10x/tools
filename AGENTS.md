@@ -36,9 +36,9 @@ file is for agents working on this repository; `README.md` is for people.
   define a new authority vocabulary. Commission binds and invokes (ADR 0082).
 - Public repository: no person's name, employer, customer, private repository name or private
   hostname in any committed text, commit message or release note.
-- Licence per crate, never at the workspace: a crate moved from harness keeps harness's
-  `LicenseRef-B10x-Proprietary`; a crate written here is Apache-2.0; `README.md`'s crate table
-  names each. Relabelling moved code is the owner's decision, not a wave's.
+- Licence per crate, never at the workspace: every crate is Apache-2.0, a crate moved from
+  harness included (owner's decision of 2026-10-20); `README.md`'s crate table names each. A
+  licence other than Apache-2.0 is the owner's decision, not a wave's.
 - All Git writes (commits, merges, pushes, tags) go through the bot route (`b10x-gates bot -- …`).
 - The planning store changes only through `aep plan artifact` verbs.
 

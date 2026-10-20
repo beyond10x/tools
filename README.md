@@ -38,15 +38,15 @@ the three crates below; the rest of the toolsets are planned in the AEP store un
 | crate | what | from | licence |
 |---|---|---|---|
 | `b10x-tool-contract` | profile types, validator, conformance runner, `tool-contract validate` | written here | Apache-2.0 |
-| `b10x-tool-fs` | `fs` v1alpha1: read, list, glob, stat over one workspace root | harness 0.13.3 `harness-tools/src/local.rs` | LicenseRef-B10x-Proprietary |
-| `b10x-tool-code-editor` | `code-editor` v1alpha1: write, edit, patch, move, delete | harness 0.13.3 `harness-tools/src/local.rs` | LicenseRef-B10x-Proprietary |
-| `b10x-tool-toolchain` | declarative toolchain registry deriving `build-test` operations | harness 0.13.3 `harness-toolchain` | LicenseRef-B10x-Proprietary |
+| `b10x-tool-fs` | `fs` v1alpha1: read, list, glob, stat over one workspace root | harness 0.13.3 `harness-tools/src/local.rs` | Apache-2.0 |
+| `b10x-tool-code-editor` | `code-editor` v1alpha1: write, edit, patch, move, delete | harness 0.13.3 `harness-tools/src/local.rs` | Apache-2.0 |
+| `b10x-tool-toolchain` | declarative toolchain registry deriving `build-test` operations | harness 0.13.3 `harness-toolchain` | Apache-2.0 |
 
 Run `task check` for the gate, or `cargo test -p <crate>` for one crate's unit tests, its conformance
 run and its mutant tests.
 
 ## License
 
-The repository and the crates written here are Apache-2.0, see [LICENSE](LICENSE). The crates moved
-from harness keep harness's licence, declared in each crate's `Cargo.toml` and named in the table
+The repository and every crate in it are Apache-2.0, see [LICENSE](LICENSE), including the crates
+moved from harness. Each crate declares its licence in its own `Cargo.toml`, named in the table
 above.
