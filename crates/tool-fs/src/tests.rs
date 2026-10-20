@@ -824,6 +824,95 @@ fn a_glob_with_exactly_max_results_matches_is_a_complete_answer() {
 }
 
 #[test]
+fn a_capped_glob_stops_walking_once_the_match_past_the_cap_is_found() {
+    // The visitor's stop returned from the current directory only, so every parent kept
+    // iterating and canonicalised the rest of the tree after the answer was already complete.
+    let inside = workspace();
+    for outer in 0..10 {
+        for inner in 0..10 {
+            let directory = inside.path().join(format!("d{outer}/s{inner}"));
+            fs::create_dir_all(&directory).expect("the directories are made");
+            for file in 0..10 {
+                fs::write(directory.join(format!("f{file}.txt")), "x")
+                    .expect("the file is written");
+            }
+        }
+    }
+    let local = reading(inside.path());
+
+    walk::VISITED.with(|visited| visited.set(0));
+    let value = local
+        .glob(&GlobInput {
+            max_results: Some(1),
+            ..GlobInput::new("*.txt")
+        })
+        .expect("the glob answers");
+    let visited = walk::VISITED.with(std::cell::Cell::get);
+    println!("the walk visited {visited} of 1,110 entries");
+
+    assert_eq!(value.paths, ["d0/s0/f0.txt"]);
+    assert!(value.truncated, "a second match past the cap");
+    assert!(!value.depth_bound_reached);
+    assert!(
+        visited < 10,
+        "the walk visited {visited} of 1,110 entries for one answered path"
+    );
+}
+
+#[test]
+fn a_capped_glob_reports_the_depth_bound_only_where_it_bit_before_the_cap() {
+    // Once the cap is passed nothing more is walked, so a directory past the bound that comes
+    // after the stop is never reached and is not reported; one that came before it still is.
+    fn nested(under: &Path) -> std::path::PathBuf {
+        (0..14).fold(under.to_path_buf(), |path, level| {
+            path.join(format!("d{level}"))
+        })
+    }
+
+    let after = workspace();
+    fs::create_dir_all(after.path().join("a")).expect("the directory is made");
+    fs::write(after.path().join("a/1.txt"), "x").expect("the file is written");
+    fs::write(after.path().join("a/2.txt"), "x").expect("the file is written");
+    let deep = nested(&after.path().join("z"));
+    fs::create_dir_all(&deep).expect("the directories are made");
+    fs::write(deep.join("deep.txt"), "x").expect("the file is written");
+
+    let value = reading(after.path())
+        .glob(&GlobInput {
+            max_results: Some(1),
+            ..GlobInput::new("*.txt")
+        })
+        .expect("the glob answers");
+    assert_eq!(value.paths, ["a/1.txt"]);
+    assert!(value.truncated);
+    assert!(
+        !value.depth_bound_reached,
+        "the deep directory comes after the stop and is never walked"
+    );
+
+    let before = workspace();
+    let deep = nested(&before.path().join("a"));
+    fs::create_dir_all(&deep).expect("the directories are made");
+    fs::write(deep.join("deep.txt"), "x").expect("the file is written");
+    fs::create_dir_all(before.path().join("b")).expect("the directory is made");
+    fs::write(before.path().join("b/1.txt"), "x").expect("the file is written");
+    fs::write(before.path().join("b/2.txt"), "x").expect("the file is written");
+
+    let value = reading(before.path())
+        .glob(&GlobInput {
+            max_results: Some(1),
+            ..GlobInput::new("*.txt")
+        })
+        .expect("the glob answers");
+    assert_eq!(value.paths, ["b/1.txt"]);
+    assert!(value.truncated);
+    assert!(
+        value.depth_bound_reached,
+        "the bound bit before the stop, so the answer above it is a partial one"
+    );
+}
+
+#[test]
 fn a_bad_window_is_judged_after_the_path() {
     // The refusal a governor reads is the path's: a window nobody could answer on a path outside
     // the workspace, absent, or not a file is refused for the path, not for the window.

@@ -23,6 +23,23 @@ pub(crate) const MAX_WALK_DEPTH: usize = 12;
 /// there.
 pub(crate) const SKIPPED: &[&str] = &[".git", "target", "node_modules", ".venv", "__pycache__"];
 
+#[cfg(test)]
+thread_local! {
+    /// How many entries [`walk`] has taken from a directory listing on this thread, each one a
+    /// `canonicalize` in [`contained`]. Test builds only, so a test can see where a capped glob
+    /// stopped; the production walk carries no counter.
+    pub(crate) static VISITED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// What one [`walk`] frame reports to the frame above it.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Walked {
+    /// [`MAX_WALK_DEPTH`] stopped a descent somewhere in the part of the tree walked.
+    pub(crate) bounded: bool,
+    /// `visit` answered `false`: nothing after that entry was walked, in this frame or any above.
+    pub(crate) stopped: bool,
+}
+
 /// Walks files under `directory`, calling `visit` until it returns `false`.
 ///
 /// Every entry is re-checked against `boundary`. Checking only the path the caller supplied is
@@ -32,10 +49,16 @@ pub(crate) const SKIPPED: &[&str] = &[".git", "target", "node_modules", ".venv",
 ///
 /// Depth is bounded so a deep or cyclic tree cannot hold the run open.
 ///
-/// **Answers whether that bound stopped a descent**, which is the whole reason it returns
-/// anything. A walk that stopped at [`MAX_WALK_DEPTH`] visited a subset of the tree, and a glob
-/// that answered `truncated: false` over it would be a bound nothing reported. The caller puts it
-/// in the reply as `depth_bound_reached`.
+/// **Answers whether that bound stopped a descent**, which is why it returns [`Walked::bounded`].
+/// A walk that stopped at [`MAX_WALK_DEPTH`] visited a subset of the tree, and a glob that
+/// answered `truncated: false` over it would be a bound nothing reported. The caller puts it in
+/// the reply as `depth_bound_reached`.
+///
+/// **A stop reaches every frame.** [`Walked::stopped`] is how a frame tells its parent that
+/// `visit` said stop, and the parent returns at once. Returning from the current frame only left
+/// every parent iterating, a `canonicalize` per remaining entry, after a capped glob's answer was
+/// already complete; and a bound met after the stop is not reported, because nothing past the
+/// stop is walked.
 ///
 /// [`SKIPPED`] directories are not reported the same way: they are named in the contract's
 /// guidance, so a model reads *which* directories are not walked before it calls rather than
@@ -45,24 +68,31 @@ pub(crate) fn walk(
     boundary: &Path,
     depth: usize,
     visit: &mut dyn FnMut(&Path) -> bool,
-) -> bool {
+) -> Walked {
     if depth > MAX_WALK_DEPTH {
-        return true;
+        return Walked {
+            bounded: true,
+            stopped: false,
+        };
     }
     if !contained(directory, boundary) {
-        return false;
+        return Walked::default();
     }
     if directory.is_file() {
-        visit(directory);
-        return false;
+        return Walked {
+            bounded: false,
+            stopped: !visit(directory),
+        };
     }
     let Ok(entries) = fs::read_dir(directory) else {
-        return false;
+        return Walked::default();
     };
     let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
     entries.sort_by_key(fs::DirEntry::file_name);
-    let mut bounded = false;
+    let mut walked = Walked::default();
     for entry in entries {
+        #[cfg(test)]
+        VISITED.with(|visited| visited.set(visited.get() + 1));
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
@@ -73,12 +103,17 @@ pub(crate) fn walk(
             if SKIPPED.contains(&name.as_ref()) {
                 continue;
             }
-            bounded |= walk(&path, boundary, depth + 1, visit);
-        } else if !visit(&path) {
-            return bounded;
+            let below = walk(&path, boundary, depth + 1, visit);
+            walked.bounded |= below.bounded;
+            walked.stopped = below.stopped;
+        } else {
+            walked.stopped = !visit(&path);
+        }
+        if walked.stopped {
+            return walked;
         }
     }
-    bounded
+    walked
 }
 
 /// Whether `path` really lives inside `boundary`, following every link on the way.
