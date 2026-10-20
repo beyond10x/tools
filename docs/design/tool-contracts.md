@@ -51,7 +51,7 @@ the contract, never the source.
 |---|---|
 | `fs` | read (paged, with whole-file digest), list, glob, stat |
 | `code-editor` | write, edit with a preimage digest, patch (several edits resolved against the original), move, delete |
-| `process` | run (argv only, bounded, no network unless granted), shell (gated), start, output, wait, signal |
+| `process` | run (argv only, bounded; the default implementation confines no network or file access, so `process.run` v1alpha1 declares those effects, and a confined run is a narrower contract), shell (gated), start, output, wait, signal |
 | `search` | grep, code search |
 | `web` | fetch (SSRF guard, body cap), search, crawl |
 | `git` | status, diff, log, stage, commit, branch, worktree |
@@ -268,7 +268,8 @@ counting bound it is `null`, like `lines.total`. A precondition that does not ma
 |---|---|---|
 | `crates/harness-tools/src/local.rs` | read, list, find, walk, line reader, containment | `tool-fs` |
 | `crates/harness-tools/src/local.rs` | write, edit, `resolve_new` | `tool-code-editor` |
-| `crates/harness-tools/src/local.rs` | `grep`, `exec`, `drain`, output caps | stays until the `search` and `process` toolsets (T3; draft stories) |
+| `crates/harness-tools/src/local.rs` at harness 0.14.1 | `exec`, `terminate`, `drain`, `read_ends`, `keep_both_ends`, output caps, `INHERITED_ENV` | `tool-process` (wave w2) |
+| `crates/harness-tools/src/local.rs` | `grep`, `search_expression`, `around`, `cut_to` | stays until the `search` toolset (wave w3) |
 | `crates/harness-tools/src/catalogue.rs`, `verbs.rs`, `flat.rs`, `scope.rs`, `toolchain.rs`, `operations.rs` | the publication over `harness-wire` | stays in harness; T2 rewires it over these crates |
 | `crates/harness-toolchain/src/lib.rs`, `builtins/*.yaml` | all | `tool-toolchain` |
 

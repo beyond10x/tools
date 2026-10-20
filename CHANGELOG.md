@@ -6,10 +6,35 @@ the bare version.
 
 ## [Unreleased]
 
+### Added
+
+- `process` v1alpha1 (`process.run`) with its conformance suite (31 scenarios), and
+  `b10x-tool-process`, harness 0.14.1's local process runner moved here: an argv and never a
+  command line, a declared program set, an environment cleared to an allow-list, a caller's
+  `timeout_ms` capped at 600000 and by what the run has left, the whole process group killed at the
+  bound, and each stream kept at both ends with the omitted byte count. It declares
+  `effects: [process, write, network, secret]` and every consequence the profile lists, because it
+  confines nothing beyond the environment, time and output.
+- `tool_contract::documents` in `b10x-tool-contract`: every `contracts/<toolset>/<version>/contract.yaml`
+  embedded at build time (`all`, `get`, `Document::contract`, one constant per document), so an
+  adopter reads command names and input schemas without depending on an implementation crate.
+  `b10x-tool-fs`, `b10x-tool-code-editor` and `b10x-tool-process` take `CONTRACT_YAML` from it.
+
+### Fixed
+
+- Against harness 0.14.1's runner, `process.run` ends at its bound and kills the process group
+  even after the program itself has exited, where a background descendant holding the output kept
+  the call open with `timed_out: false`; a descendant that left the group is waited for at most
+  500 ms after the kill; a cut moves only for a character it broke.
+
 ### Changed
 
 - `b10x-tool-fs`, `b10x-tool-code-editor` and `b10x-tool-toolchain` are Apache-2.0, like every
   other crate in the repository; 0.1.0 released them as `LicenseRef-B10x-Proprietary`.
+- `fs.glob` stops walking once `max_results` matching paths are answered (4 entries visited instead
+  of 211 on a 1,110-entry tree with `max_results: 1`). `paths` and `truncated` are unchanged; a
+  capped glob that stops before reaching a directory past the depth bound now answers
+  `depth_bound_reached: false`, where 0.1.0 answered `true`.
 
 ## [0.1.0] - 2026-10-20
 

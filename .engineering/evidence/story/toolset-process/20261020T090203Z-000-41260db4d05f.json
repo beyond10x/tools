@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T09:02:03Z",
+  "actor": "human:timo",
+  "artifact": "story:toolset-process",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p b10x-tool-process --locked --no-fail-fast; tool-contract validate contracts/",
+    "reference": "base bf8deee has no process toolset (new behaviour) vs treatment: exit 0, lanes 21/9/4/2/8 passed, process contract ok; the program-set, kill and group-kill scenarios each fail under their mutant; coordinator/scratch/verify-process.log under the wave root"
+  }
+}

@@ -18,8 +18,8 @@ This repository separates the contract from the implementation:
   these crates or bring its own implementation and pass the same suite.
 
 Status: started 2026-10-19. The design is [docs/design/tool-contracts.md](docs/design/tool-contracts.md).
-The first release carries the profile, the `fs` and `code-editor` contracts with their suites, and
-the three crates below; the rest of the toolsets are planned in the AEP store under
+The releases carry the profile, the `fs`, `code-editor` and `process` contracts with their suites,
+and the crates below; the rest of the toolsets are planned in the AEP store under
 `.engineering/planning`. Changes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Layout
@@ -37,10 +37,11 @@ the three crates below; the rest of the toolsets are planned in the AEP store un
 
 | crate | what | from | licence |
 |---|---|---|---|
-| `b10x-tool-contract` | profile types, validator, conformance runner, `tool-contract validate` | written here | Apache-2.0 |
+| `b10x-tool-contract` | profile types, validator, conformance runner, `tool-contract validate`, every contract document embedded (`tool_contract::documents`) | written here | Apache-2.0 |
 | `b10x-tool-fs` | `fs` v1alpha1: read, list, glob, stat over one workspace root | harness 0.13.3 `harness-tools/src/local.rs` | Apache-2.0 |
 | `b10x-tool-code-editor` | `code-editor` v1alpha1: write, edit, patch, move, delete | harness 0.13.3 `harness-tools/src/local.rs` | Apache-2.0 |
 | `b10x-tool-toolchain` | declarative toolchain registry deriving `build-test` operations | harness 0.13.3 `harness-toolchain` | Apache-2.0 |
+| `b10x-tool-process` | `process` v1alpha1: run one declared program by argv in one workspace root | harness 0.14.1 `harness-tools/src/local.rs` | Apache-2.0 |
 
 Run `task check` for the gate, or `cargo test -p <crate>` for one crate's unit tests, its conformance
 run and its mutant tests.

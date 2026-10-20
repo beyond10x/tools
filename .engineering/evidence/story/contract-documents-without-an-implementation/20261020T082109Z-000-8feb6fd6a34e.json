@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T08:21:09Z",
+  "actor": "human:timo",
+  "artifact": "story:contract-documents-without-an-implementation",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p b10x-tool-contract --test documents --test adversary_documents --locked; cargo tree -p b10x-tool-contract -e all",
+    "reference": "base bf8deee has no documents module (git show bf8deee:crates/tool-contract/src/lib.rs) vs treatment 794a179: 9 and 5 passed, exit 0, no implementation crate in the tree; log coordinator/scratch/verify-cd-treatment.log under the wave root"
+  }
+}

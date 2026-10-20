@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T08:22:56Z",
+  "actor": "human:timo",
+  "artifact": "story:fs-glob-stops-at-the-cap",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p b10x-tool-fs --locked (tests::a_capped_glob_stops_walking_once_the_match_past_the_cap_is_found)",
+    "reference": "base bf8deee: the walk visited 211 of 1,110 entries (fs-glob/scratch/test-red.log) vs treatment: under 10, test ok, suite exit 0 with 48 cases (coordinator/scratch/verify-fsglob-treatment.log), under the wave root"
+  }
+}

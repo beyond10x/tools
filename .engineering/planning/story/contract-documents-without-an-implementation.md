@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:contract-documents-without-an-implementation
 kind: story
-status: active
+status: implemented
 title: The released contract documents are reachable through b10x-tool-contract alone
 relations:
 - decomposes: epic:tool-contracts
@@ -13,10 +13,11 @@ scope:
   path: crates/tool-contract
 - confidence: cited
   path: crates/tool-fs/src/toolset.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-20T07:48:36Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-20T07:48:36Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-20T09:06:38Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 
