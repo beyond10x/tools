@@ -1,0 +1,160 @@
+format: tool-conformance/1
+toolset: code-editor
+version: v1alpha1
+scenarios:
+  - name: write-a-write-answers-the-digest-of-what-it-wrote
+    holds: [effects, output, bounds, determinism]
+    fixture:
+      files: {a.txt: "old\n"}
+    call: {operation: code.write, input: {path: a.txt, text: "new\n"}}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        bytes: 4
+        sha256: {$sha256_of: a.txt}
+      files:
+        a.txt: {equals: "new\n"}
+  - name: write-writing-the-same-text-twice-leaves-the-same-digest
+    holds: [idempotency, output]
+    fixture:
+      files: {a.txt: "same\n"}
+    call: {operation: code.write, input: {path: a.txt, text: "same\n"}}
+    expect:
+      outcome: ok
+      output:
+        bytes: 5
+        sha256: a6328afc76e9db71da297ebff4b0d3e7a7eb3b01d917c05a6573fef121b6ecb6
+      files:
+        a.txt: {sha256: a6328afc76e9db71da297ebff4b0d3e7a7eb3b01d917c05a6573fef121b6ecb6}
+  - name: write-a-new-file-is-created-where-its-parent-exists
+    holds: [effects, subjects]
+    fixture:
+      files: {dir/keep: "keep\n"}
+    call: {operation: code.write, input: {path: dir/new.txt, text: "x\n"}}
+    expect:
+      outcome: ok
+      output: {path: dir/new.txt, bytes: 2}
+      files:
+        dir/new.txt: {equals: "x\n"}
+        dir/keep: unchanged
+  - name: write-a-stale-digest-is-refused-and-the-file-is-unchanged
+    holds: [preconditions]
+    fixture:
+      files: {a.txt: "old\n"}
+    call:
+      operation: code.write
+      input:
+        path: a.txt
+        text: "new\n"
+        expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    expect:
+      error: code.PreconditionFailed
+      output:
+        expected: "0000000000000000000000000000000000000000000000000000000000000000"
+        actual: {$sha256_of: a.txt}
+      files:
+        a.txt: unchanged
+  - name: write-a-matching-digest-lets-the-write-through
+    holds: [preconditions]
+    fixture:
+      files: {a.txt: "old\n"}
+    call:
+      operation: code.write
+      input:
+        path: a.txt
+        text: "new\n"
+        expected_sha256: 01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee
+    expect:
+      outcome: ok
+      files:
+        a.txt: {equals: "new\n"}
+  - name: write-a-digest-given-for-a-file-that-is-not-there-is-a-mismatch-with-no-actual
+    holds: [preconditions]
+    call:
+      operation: code.write
+      input:
+        path: new.txt
+        text: "x\n"
+        expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    expect:
+      error: code.PreconditionFailed
+      output:
+        expected: "0000000000000000000000000000000000000000000000000000000000000000"
+        actual: {$absent: true}
+      files:
+        new.txt: absent
+  - name: write-a-path-that-climbs-out-is-refused
+    holds: [subjects]
+    call: {operation: code.write, input: {path: ../escaped-by-write.txt, text: "nope\n"}}
+    expect:
+      error: code.OutsideWorkspace
+      output: {path: ../escaped-by-write.txt}
+  - name: write-a-link-out-of-the-workspace-is-refused-by-where-it-lands
+    holds: [subjects]
+    fixture:
+      dir: fixtures/link-to-parent
+    call: {operation: code.write, input: {path: link/escaped-through-link.txt, text: "nope\n"}}
+    expect:
+      error: code.OutsideWorkspace
+      output: {path: link/escaped-through-link.txt}
+      files:
+        link: unchanged
+        link/escaped-through-link.txt: absent
+  - name: write-a-link-that-leads-nowhere-is-not-a-door-out
+    holds: [subjects]
+    fixture:
+      dir: fixtures/dangling-link
+    call: {operation: code.write, input: {path: link, text: "nope\n"}}
+    expect:
+      error: code.IsSymlink
+      output: {path: link}
+      files:
+        link: unchanged
+        missing.txt: absent
+  - name: write-a-link-inside-the-workspace-reaches-its-target-under-its-own-name
+    holds: [subjects, effects]
+    fixture:
+      dir: fixtures/link-inside
+    call: {operation: code.write, input: {path: link, text: "after\n"}}
+    expect:
+      outcome: ok
+      output: {path: real.txt, bytes: 6}
+      files:
+        real.txt: {equals: "after\n"}
+        link: unchanged
+  - name: write-a-missing-parent-is-refused-and-not-created
+    holds: [subjects]
+    call: {operation: code.write, input: {path: new/dir/file.txt, text: "hello\n"}}
+    expect:
+      error: code.ParentMissing
+      output: {path: new/dir/file.txt}
+      files:
+        new: absent
+        new/dir/file.txt: absent
+  - name: write-a-directory-is-not-written-as-a-file
+    holds: [subjects]
+    fixture:
+      files: {dir/keep: "keep\n"}
+    call: {operation: code.write, input: {path: dir, text: "nope\n"}}
+    expect:
+      error: code.NotAFile
+      output: {path: dir}
+      files:
+        dir/keep: unchanged
+  - name: write-an-absent-path-spelled-as-a-directory-is-refused-and-nothing-is-created
+    holds: [subjects]
+    call: {operation: code.write, input: {path: "new/", text: "nope\n"}}
+    expect:
+      error: code.NotAFile
+      output: {path: "new/"}
+      files:
+        new: absent
+  - name: write-an-absent-path-spelled-with-a-trailing-dot-is-refused-and-nothing-is-created
+    holds: [subjects]
+    call: {operation: code.write, input: {path: "new/.", text: "nope\n"}}
+    expect:
+      error: code.NotAFile
+      output: {path: "new/."}
+      files:
+        new: absent

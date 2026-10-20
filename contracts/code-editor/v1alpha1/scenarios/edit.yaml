@@ -1,0 +1,125 @@
+format: tool-conformance/1
+toolset: code-editor
+version: v1alpha1
+scenarios:
+  - name: edit-an-edit-replaces-exactly-one-match-and-answers-a-unified-diff
+    holds: [effects, output, bounds, determinism]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: code.edit, input: {path: a.txt, old: one, new: uno}}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        bytes: 8
+        sha256: {$sha256_of: a.txt}
+        diff: {$contains: "-one\n+uno\n"}
+      files:
+        a.txt: {equals: "uno\ntwo\n"}
+  - name: edit-the-diff-names-the-workspace-relative-path-twice
+    holds: [output]
+    fixture:
+      files: {src/a.txt: "one\ntwo\n"}
+    call: {operation: code.edit, input: {path: src/a.txt, old: one, new: uno}}
+    expect:
+      outcome: ok
+      output:
+        path: src/a.txt
+        diff: {$contains: "--- src/a.txt\n+++ src/a.txt\n"}
+  - name: edit-an-edit-that-matches-twice-changes-nothing
+    holds: [effects, output]
+    fixture:
+      files: {twice.rs: "let x = 1;\nlet x = 1;\n"}
+    call: {operation: code.edit, input: {path: twice.rs, old: "let x = 1;", new: "let x = 2;"}}
+    expect:
+      error: code.Ambiguous
+      output: {index: 0, count: 2}
+      files:
+        twice.rs: unchanged
+  - name: edit-an-edit-that-matches-nowhere-changes-nothing
+    holds: [effects]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: code.edit, input: {path: a.txt, old: three, new: tres}}
+    expect:
+      error: code.NoMatch
+      output: {index: 0}
+      files:
+        a.txt: unchanged
+  - name: edit-an-empty-old-is-refused
+    holds: [effects]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: code.edit, input: {path: a.txt, old: "", new: x}}
+    expect:
+      error: code.EmptyOld
+      output: {index: 0}
+      files:
+        a.txt: unchanged
+  - name: edit-a-stale-digest-is-refused-and-the-file-is-unchanged
+    holds: [preconditions]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call:
+      operation: code.edit
+      input:
+        path: a.txt
+        old: one
+        new: uno
+        expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    expect:
+      error: code.PreconditionFailed
+      output:
+        expected: "0000000000000000000000000000000000000000000000000000000000000000"
+        actual: {$sha256_of: a.txt}
+      files:
+        a.txt: unchanged
+  - name: edit-a-matching-digest-lets-the-edit-through
+    holds: [preconditions]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call:
+      operation: code.edit
+      input:
+        path: a.txt
+        old: one
+        new: uno
+        expected_sha256: c3f9c8c283a2b1f2f1896f27a01cbe3cddc0c9d93f752e4639035a0f5b36f6e8
+    expect:
+      outcome: ok
+      files:
+        a.txt: {equals: "uno\ntwo\n"}
+  - name: edit-the-same-edit-a-second-time-finds-nothing-to-replace
+    holds: [idempotency]
+    fixture:
+      files: {a.txt: "uno\ntwo\n"}
+    call: {operation: code.edit, input: {path: a.txt, old: one, new: uno}}
+    expect:
+      error: code.NoMatch
+      output: {index: 0}
+      files:
+        a.txt: unchanged
+  - name: edit-a-missing-file-is-not-found
+    holds: [subjects]
+    call: {operation: code.edit, input: {path: missing.txt, old: one, new: uno}}
+    expect:
+      error: code.NotFound
+      output: {path: missing.txt}
+      files:
+        missing.txt: absent
+  - name: edit-a-path-that-climbs-out-is-refused
+    holds: [subjects]
+    call: {operation: code.edit, input: {path: ../escaped-by-edit.txt, old: one, new: uno}}
+    expect:
+      error: code.OutsideWorkspace
+      output: {path: ../escaped-by-edit.txt}
+  - name: edit-a-directory-is-not-edited
+    holds: [subjects]
+    fixture:
+      files: {dir/keep: "keep\n"}
+    call: {operation: code.edit, input: {path: dir, old: keep, new: x}}
+    expect:
+      error: code.NotAFile
+      output: {path: dir}
+      files:
+        dir/keep: unchanged

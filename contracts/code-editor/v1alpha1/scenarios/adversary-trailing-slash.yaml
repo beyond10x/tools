@@ -1,0 +1,51 @@
+format: tool-conformance/1
+toolset: code-editor
+version: v1alpha1
+scenarios:
+  - name: adversary-edit-a-link-spelled-with-a-trailing-slash-still-lands-under-the-targets-own-name
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/link-inside
+    call: {operation: code.edit, input: {path: "link/", old: before, new: after}}
+    expect:
+      outcome: ok
+      output: {path: real.txt, bytes: 6}
+      files:
+        real.txt: {equals: "after\n"}
+        link: unchanged
+  - name: adversary-patch-a-link-spelled-with-a-trailing-slash-still-lands-under-the-targets-own-name
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/link-inside
+    call:
+      operation: code.patch
+      input: {path: "link/", edits: [{old: before, new: after}]}
+    expect:
+      outcome: ok
+      output: {path: real.txt, bytes: 6, applied: 1}
+      files:
+        real.txt: {equals: "after\n"}
+        link: unchanged
+  - name: adversary-delete-a-link-spelled-with-a-trailing-slash-is-still-refused-by-name
+    holds: [subjects]
+    fixture:
+      dir: fixtures/link-inside
+    call: {operation: code.delete, input: {path: "link/"}}
+    expect:
+      error: code.IsSymlink
+      output: {path: "link/"}
+      files:
+        link: unchanged
+        real.txt: unchanged
+  - name: adversary-move-a-link-spelled-with-a-trailing-slash-still-moves-its-target
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/link-inside
+    call: {operation: code.move, input: {from: "link/", to: b.txt}}
+    expect:
+      outcome: ok
+      output: {from: real.txt, to: b.txt}
+      files:
+        real.txt: absent
+        b.txt: {equals: "before\n"}
+        link: unchanged
