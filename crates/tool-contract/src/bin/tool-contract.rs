@@ -67,10 +67,21 @@ fn validate_dir(dir: &Path) -> ExitCode {
     }
 }
 
+/// Every `contract.yaml` under `dir`, by walking directories and never following a symlink.
+///
+/// A toolset's fixtures lay out links on purpose, among them links back up the tree
+/// (`fixtures/linked/up -> ..`). The entry's own file type is read with `symlink_metadata`
+/// semantics, so a link is neither descended into nor reported: following one reported the same
+/// document under every spelling the loop produced until the kernel refused the path.
 fn find_contracts(dir: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.is_dir() {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        if kind.is_dir() {
             find_contracts(&path, found)?;
         } else if path.file_name().is_some_and(|name| name == "contract.yaml") {
             found.push(path);

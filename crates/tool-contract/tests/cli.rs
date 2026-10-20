@@ -116,6 +116,43 @@ fn validate_refuses_a_sibling_scenarios_directory_that_leaves_a_property_uncover
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn validate_does_not_follow_a_fixture_link_that_points_at_its_own_parent() {
+    // A toolset's fixtures may hold a link back up the tree (`fixtures/linked/up -> ..`), which
+    // the suites lay out on purpose. The walk that finds documents must not follow it: on the
+    // merged contracts tree it recursed until the kernel answered ELOOP, and `validate` exited 1
+    // on a tree whose every document was valid.
+    let dir = scratch();
+    let doc_dir = dir.path().join("notes");
+    fs::create_dir_all(doc_dir.join("fixtures/linked")).expect("mkdir");
+    fs::copy(
+        here("tests/fixtures/notes/contract.yaml"),
+        doc_dir.join("contract.yaml"),
+    )
+    .expect("copy");
+    std::os::unix::fs::symlink("..", doc_dir.join("fixtures/linked/up")).expect("symlink");
+    std::os::unix::fs::symlink("missing.txt", doc_dir.join("fixtures/linked/nowhere"))
+        .expect("symlink");
+    // A second document reachable through a link as well as directly: a walk that follows links
+    // reports it twice, under two names, and the second name is a path no reader should see.
+    let other_dir = dir.path().join("other");
+    fs::create_dir_all(&other_dir).expect("mkdir");
+    fs::copy(
+        here("tests/fixtures/notes/contract.yaml"),
+        other_dir.join("contract.yaml"),
+    )
+    .expect("copy");
+    std::os::unix::fs::symlink("../../other", doc_dir.join("fixtures/alias")).expect("symlink");
+    let output = validate(dir.path());
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.matches("ok ").count(), 2, "{stdout}");
+    assert!(stdout.contains("notes/contract.yaml"), "{stdout}");
+    assert!(stdout.contains("other/contract.yaml"), "{stdout}");
+    assert!(!stdout.contains("alias"), "{stdout}");
+}
+
 #[test]
 fn validate_accepts_a_sibling_scenarios_directory_that_covers_every_property() {
     let output = validate(&here("tests/fixtures/notes"));
