@@ -1,0 +1,104 @@
+format: tool-conformance/1
+toolset: fs
+version: v1alpha1
+scenarios:
+  - name: adversary-a-path-through-a-file-does-not-exist-and-is-not-found
+    holds: [output, subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: fs.read, input: {path: a.txt/x}}
+    expect:
+      error: fs.NotFound
+      output: {path: a.txt/x}
+      files: {a.txt: unchanged}
+  - name: adversary-the-last-line-is-a-window-of-its-own
+    holds: [paging]
+    fixture:
+      files: {three.txt: "a\nb\nc\n"}
+    call: {operation: fs.read, input: {path: three.txt, offset: 3}}
+    expect:
+      outcome: ok
+      output:
+        text: "     3\tc\n"
+        lines: {from: 3, to: 3, total: 3}
+        truncated: false
+  - name: adversary-the-line-after-the-last-is-past-the-end
+    holds: [paging]
+    fixture:
+      files: {three.txt: "a\nb\nc\n"}
+    call: {operation: fs.read, input: {path: three.txt, offset: 4}}
+    expect:
+      error: fs.InvalidWindow
+      output: {path: three.txt}
+  - name: adversary-a-file-of-exactly-the-byte-ceiling-is-answered-whole
+    holds: [bounds]
+    fixture:
+      files: {eight.txt: "abc\nxyz\n"}
+    call: {operation: fs.read, input: {path: eight.txt, max_bytes: 8}}
+    expect:
+      outcome: ok
+      output:
+        text: "     1\tabc\n     2\txyz\n"
+        lines: {from: 1, to: 2, total: 2}
+        truncated: false
+        truncated_lines: []
+  - name: adversary-a-file-one-byte-over-the-byte-ceiling-loses-its-last-line
+    holds: [bounds]
+    fixture:
+      files: {eight.txt: "abc\nxyz\n"}
+    call: {operation: fs.read, input: {path: eight.txt, max_bytes: 7}}
+    expect:
+      outcome: ok
+      output:
+        text: "     1\tabc\n"
+        lines: {from: 1, to: 1, total: 2}
+        truncated: true
+        truncated_lines: []
+  - name: adversary-a-read-with-no-path-is-invalid-input
+    holds: [output]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: fs.read, input: {}}
+    expect:
+      error: fs.InvalidInput
+      files: {a.txt: unchanged}
+  - name: adversary-a-last-line-without-a-newline-weighs-only-its-bytes
+    holds: [bounds]
+    fixture:
+      files: {seven.txt: "abc\nxyz"}
+    call: {operation: fs.read, input: {path: seven.txt, max_bytes: 7}}
+    expect:
+      outcome: ok
+      output:
+        bytes: 7
+        text: "     1\tabc\n     2\txyz\n"
+        lines: {from: 1, to: 2, total: 2}
+        truncated: false
+        truncated_lines: []
+        sha256: {$sha256_of: seven.txt}
+  - name: adversary-a-last-line-without-a-newline-is-still-cut-by-a-ceiling-one-byte-short
+    holds: [bounds]
+    fixture:
+      files: {seven.txt: "abc\nxyz"}
+    call: {operation: fs.read, input: {path: seven.txt, max_bytes: 6}}
+    expect:
+      outcome: ok
+      output:
+        text: "     1\tabc\n"
+        lines: {from: 1, to: 1, total: 2}
+        truncated: true
+        truncated_lines: []
+  - name: adversary-a-crlf-file-whose-last-line-has-no-newline-reads-whole-at-its-own-size
+    holds: [output, bounds]
+    fixture:
+      files: {dos.txt: "alpha\r\nbeta"}
+    call: {operation: fs.read, input: {path: dos.txt, max_bytes: 11}}
+    expect:
+      outcome: ok
+      output:
+        bytes: 11
+        text: "     1\talpha\n     2\tbeta\n"
+        lines: {from: 1, to: 2, total: 2}
+        truncated: false
+        truncated_lines: []
+        sha256: {$sha256_of: dos.txt}
