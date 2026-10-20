@@ -2,17 +2,23 @@
 format: aep.planning-md/3
 id: story:toolset-process
 kind: story
-status: draft
+status: implemented
 title: The process toolset has a contract, a conformance suite and a default implementation
 relations:
 - decomposes: epic:tool-contracts
 - depends_on: story:tool-contract-profile
 scope:
 - confidence: cited
+  path: Cargo.lock
+- confidence: cited
   path: contracts/process/v1alpha1
 - confidence: cited
   path: crates/tool-process
-revision: 2
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-20T07:48:36Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-20T07:48:36Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-20T09:06:41Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":9,"verification":1}}}
 ---
 ## Outcome
 

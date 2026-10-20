@@ -1,0 +1,76 @@
+format: tool-conformance/1
+toolset: process
+version: v1alpha1
+scenarios:
+  - name: a-program-outside-the-declared-set-is-refused-by-name-with-nothing-started
+    holds: [subjects, effects]
+    call:
+      operation: process.run
+      input:
+        argv: [touch, marker.txt]
+    expect:
+      error: process.ProgramNotDeclared
+      output:
+        program: touch
+        declared: [sh, printf, b10x-conformance-absent-program]
+      files:
+        marker.txt: absent
+  - name: a-declared-program-under-another-spelling-is-refused
+    holds: [subjects]
+    call:
+      operation: process.run
+      input:
+        argv: [/bin/sh, -c, "printf x > marker.txt"]
+    expect:
+      error: process.ProgramNotDeclared
+      output:
+        program: /bin/sh
+      files:
+        marker.txt: absent
+  - name: argv-is-not-a-command-line
+    holds: [subjects, effects]
+    call:
+      operation: process.run
+      input:
+        argv: [printf, "%s", "a; touch injected.txt $(touch substituted.txt) > redirected.txt"]
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: "a; touch injected.txt $(touch substituted.txt) > redirected.txt"
+      files:
+        injected.txt: absent
+        substituted.txt: absent
+        redirected.txt: absent
+  - name: an-empty-argv-is-refused-with-nothing-started
+    call:
+      operation: process.run
+      input:
+        argv: []
+    expect:
+      error: process.EmptyArgv
+  - name: a-declared-program-that-cannot-be-started-is-a-spawn-failure
+    call:
+      operation: process.run
+      input:
+        argv: [b10x-conformance-absent-program]
+    expect:
+      error: process.SpawnFailed
+      output:
+        program: b10x-conformance-absent-program
+  - name: a-command-line-in-place-of-an-argv-is-refused-as-invalid-input
+    call:
+      operation: process.run
+      input:
+        argv: "sh -c 'touch marker.txt'"
+    expect:
+      error: process.InvalidInput
+      files:
+        marker.txt: absent
+  - name: a-call-without-argv-is-refused-as-invalid-input
+    call:
+      operation: process.run
+      input:
+        timeout_ms: 1000
+    expect:
+      error: process.InvalidInput

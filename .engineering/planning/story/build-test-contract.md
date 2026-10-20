@@ -7,6 +7,7 @@ title: The build-test toolset has a static contract and a conformance suite over
 relations:
 - decomposes: epic:tool-contracts
 - depends_on: story:toolset-toolchain
+- depends_on: story:toolset-process
 scope:
 - confidence: cited
   path: contracts/build-test/v1alpha1

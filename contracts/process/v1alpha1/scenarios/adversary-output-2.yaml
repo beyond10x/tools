@@ -1,0 +1,42 @@
+format: tool-conformance/1
+toolset: process
+version: v1alpha1
+scenarios:
+  - name: adversary-a-byte-that-is-not-utf-8-closing-the-head-is-answered-and-not-moved
+    holds: [output]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            a=a; b=b; i=0
+            while [ "$i" -lt 15 ]; do a="$a$a"; b="$b$b"; i=$((i + 1)); done
+            printf '%s\351%s%s' "${a#a}" "$b" "$b"
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: {$contains: "a�\n… 32768 bytes omitted here …\nb"}
+        truncated: true
+        omitted_bytes: 32768
+  - name: adversary-a-byte-that-is-not-utf-8-opening-the-tail-is-answered-and-not-moved
+    holds: [output]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            a=a; z=z; i=0
+            while [ "$i" -lt 15 ]; do a="$a$a"; z="$z$z"; i=$((i + 1)); done
+            printf '%s%s\251%s' "$a" "$a" "${z#z}"
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: {$contains: "a\n… 32768 bytes omitted here …\n�z"}
+        truncated: true
+        omitted_bytes: 32768

@@ -1,0 +1,18 @@
+format: tool-conformance/1
+toolset: process
+version: v1alpha1
+scenarios:
+  - name: adversary-a-descendant-left-by-a-shell-that-ended-is-killed-at-the-bound-not-only-left-behind
+    holds: [bounds]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "(sleep 0.45; printf survived) & printf started"]
+        timeout_ms: 200
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: started
+        timed_out: true
+        timeout_ms: 200

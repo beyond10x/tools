@@ -1,0 +1,63 @@
+format: tool-conformance/1
+toolset: process
+version: v1alpha1
+scenarios:
+  - name: adversary-the-head-cut-lands-between-characters-after-a-byte-that-is-not-utf-8
+    holds: [output]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            a=a; b=b; i=0
+            while [ "$i" -lt 15 ]; do a="$a$a"; b="$b$b"; i=$((i + 1)); done
+            printf '\351%s€%s%s' "${a#aa}" "$b" "$b"
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: {$contains: "a\n… 32771 bytes omitted here …\nb"}
+        truncated: true
+        omitted_bytes: 32771
+  - name: adversary-one-byte-over-the-cap-is-cut-and-the-marker-names-one-byte
+    holds: [bounds, output]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            a=a; z=z; i=0
+            while [ "$i" -lt 15 ]; do a="$a$a"; z="$z$z"; i=$((i + 1)); done
+            printf '%sm%s' "$a" "$z"
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: {$contains: "a\n… 1 bytes omitted here …\nz"}
+        truncated: true
+        omitted_bytes: 1
+  - name: adversary-both-streams-over-the-cap-are-each-cut-and-omitted-bytes-is-their-sum
+    holds: [bounds, output]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            a=a; z=z; y=y; x=x; i=0
+            while [ "$i" -lt 15 ]; do a="$a$a"; z="$z$z"; y="$y$y"; x="$x$x"; i=$((i + 1)); done
+            printf '%s%s%s%s' "$a" "$a" "$z" "$z"
+            printf '%s%s%s' "$y" "$y" "$x" >&2
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: {$contains: "a\n… 65536 bytes omitted here …\nz"}
+        stderr: {$contains: "y\n… 32768 bytes omitted here …\nx"}
+        truncated: true
+        omitted_bytes: 98304

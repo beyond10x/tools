@@ -1,0 +1,100 @@
+format: tool-conformance/1
+toolset: process
+version: v1alpha1
+scenarios:
+  - name: a-run-over-its-bound-is-killed-with-its-descendants-and-says-so
+    holds: [bounds, output]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "(sleep 2; printf late) & wait"]
+        timeout_ms: 300
+    expect:
+      outcome: ok
+      output:
+        exit: {$absent: true}
+        stdout: ""
+        timed_out: true
+        timeout_ms: 300
+  - name: a-descendant-in-the-group-dies-with-its-shell-at-the-bound
+    holds: [bounds]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            parent=$$
+            (
+              i=0
+              while [ "$i" -lt 100 ]; do
+                kill -0 "$parent" 2>/dev/null || { printf orphaned; exit 0; }
+                sleep 0.02
+                i=$((i + 1))
+              done
+              printf outlived
+            ) &
+            wait
+        timeout_ms: 300
+    expect:
+      outcome: ok
+      output:
+        exit: {$absent: true}
+        stdout: ""
+        stderr: ""
+        timed_out: true
+        timeout_ms: 300
+  - name: a-shell-that-ended-while-its-descendant-held-the-output-past-the-bound-has-timed-out
+    holds: [bounds, output]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "(sleep 2; printf late) & exit 4"]
+        timeout_ms: 300
+    expect:
+      outcome: ok
+      output:
+        exit: 4
+        stdout: ""
+        timed_out: true
+        timeout_ms: 300
+  - name: a-run-that-ends-inside-its-bound-answers-the-bound-it-was-given
+    holds: [bounds]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "printf quick"]
+        timeout_ms: 5000
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: quick
+        timed_out: false
+        timeout_ms: 5000
+  - name: a-run-that-names-no-bound-is-given-the-default
+    holds: [bounds]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "exit 0"]
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        timed_out: false
+        timeout_ms: 600000
+  - name: a-bound-above-the-maximum-is-capped-at-the-maximum
+    holds: [bounds]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "exit 0"]
+        timeout_ms: 3600000
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        timed_out: false
+        timeout_ms: 600000

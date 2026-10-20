@@ -1,0 +1,105 @@
+format: tool-contract/1
+toolset: process
+version: v1alpha1
+summary: >-
+  Run one program from a declared set in one workspace root, named by an argv and never by a
+  command line, with no standard input and an environment cleared down to an allow-list of
+  names, under a wall-clock bound that kills the program's whole process group, and answer its
+  exit status and both output streams, each kept at both ends with the omitted byte count named.
+  Nothing else is confined: the program may do whatever its user can, so the operation declares
+  every effect that allows.
+errors:
+  - name: process.InvalidInput
+    summary: The input is not the operation's input; a field is missing, unknown or of the wrong type, and the message says which. Nothing was started.
+  - name: process.EmptyArgv
+    summary: argv is empty, so it names no program. Nothing was started.
+  - name: process.ProgramNotDeclared
+    summary: argv[0] is not in the declared program set, compared as text; the refusal names the program and the set. Nothing was started.
+    fields:
+      - name: program
+        type: String
+        description: argv[0] as given.
+      - name: declared
+        type: List<String>
+        description: The declared program set, in the order it was declared; empty when nothing may be started.
+  - name: process.WorkspaceUnavailable
+    summary: The workspace root cannot be opened, cannot be entered or is not a directory, so there is nowhere to run a program. Nothing was started.
+    fields: [{name: path, type: String}]
+  - name: process.SpawnFailed
+    summary: A declared program could not be started, because it is not on the search path the child gets or is not executable; the message carries the system's words.
+    fields: [{name: program, type: String}]
+  - name: process.WaitFailed
+    summary: The program was started and the system then refused to report on it; its process group was killed and the message carries the system's words.
+    fields: [{name: program, type: String}]
+operations:
+  - name: process.run
+    summary: Run one declared program with its arguments and answer its exit status and output.
+    guidance: >-
+      argv is the program and its arguments as a list. Nothing is split, quoted, expanded,
+      redirected or substituted, so a pipe or a redirect needs a declared shell named as the
+      program (argv [sh, -c, "..."]). argv[0] must be one of the declared programs, compared as
+      text: sh and /bin/sh are different names. The program runs in the workspace root with no
+      standard input and with only the allow-listed environment variables; nothing else about it
+      is confined. A non-zero exit is a result, not an error: read exit. timeout_ms bounds the
+      run, which lasts until the program and every holder of its output have finished (default
+      600000, at most 600000); at the bound the whole process group is killed and timed_out is
+      true, and exit is null unless the program itself had already ended. Each
+      stream keeps its first and last 32768 bytes; the middle is replaced by a marker naming how
+      many bytes it held, truncated is true and omitted_bytes is the total over both streams.
+    renderings: {mcp: process_run}
+    input:
+      - name: argv
+        type: List<String>
+        description: The program, then its arguments, one item each. Never a command line.
+      - name: timeout_ms
+        type: Optional<Integer>
+        description: The wall-clock bound in milliseconds. Default 600000; a larger ask is capped at 600000, and the time the caller's run has left caps it further.
+    output:
+      - name: argv
+        type: List<String>
+        description: The argv that was run, as given.
+      - name: exit
+        type: Optional<Integer>
+        description: The program's exit code; null when it was ended by a signal, the kill at the bound included. A program that ended by itself before the bound keeps its code even when a descendant was killed there.
+      - name: stdout
+        type: String
+        description: The standard output, both ends kept; a cut in the middle is a marker naming the bytes it replaced.
+      - name: stderr
+        type: String
+        description: The standard error, kept the same way.
+      - name: truncated
+        type: Boolean
+        description: Either stream was cut; omitted_bytes is then above 0.
+      - name: omitted_bytes
+        type: Integer
+        description: The bytes dropped from the middle of the two streams together; each stream's marker names its own share.
+      - name: timed_out
+        type: Boolean
+        description: The bound was reached before the program and every holder of its output had finished, and the process group was killed; the streams hold what was read by then.
+      - name: timeout_ms
+        type: Integer
+        description: The bound the run was given, in milliseconds, after the caps, so a kill at the bound is not read as the program's own slowness.
+    outcomes:
+      - {name: ran, summary: The program ran to its own end or to the bound; exit and timed_out say which.}
+      - {name: invalid-input, error: process.InvalidInput}
+      - {name: empty-argv, error: process.EmptyArgv}
+      - {name: program-not-declared, error: process.ProgramNotDeclared}
+      - {name: workspace-unavailable, error: process.WorkspaceUnavailable}
+      - {name: spawn-failed, error: process.SpawnFailed}
+      - {name: wait-failed, error: process.WaitFailed}
+    profile:
+      effects: [process, write, network, secret]
+      consequences: [money, delete, send-external, irreversible, sensitive-data]
+      risk: high
+      idempotency: non-idempotent
+      preconditions: []
+      determinism: nondeterministic
+      bounds:
+        timeout_ms: {default: 600000, max: 600000}
+        output_bytes: {default: 65536, max: 65536}
+      requires: {binaries: [], env: [], settings: [programs], secrets: []}
+      subjects:
+        - {field: argv, kind: argv, pattern: "process.run({argv[0]})"}
+      placement: local
+      capability: workspace.execute
+      output: {untrusted: true, failure_as_result: true}

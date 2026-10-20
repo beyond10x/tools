@@ -497,7 +497,7 @@ impl Fs {
 
         let mut paths = Vec::new();
         let mut truncated = false;
-        let depth_bound_reached = walk(&root, &self.root, 0, &mut |file| {
+        let walked = walk(&root, &self.root, 0, &mut |file| {
             let shown = self.display(file);
             if !filter.matches(&shown) {
                 return true;
@@ -518,7 +518,7 @@ impl Fs {
             // Always present, like `truncated`. A glob says it lists every match under the
             // workspace; where the walk stopped descending, it listed the matches above a depth
             // instead, and nothing else in the reply would say so.
-            depth_bound_reached,
+            depth_bound_reached: walked.bounded,
         })
     }
 
