@@ -1,0 +1,32 @@
+format: tool-conformance/1
+toolset: search
+version: v1alpha1
+scenarios:
+  - name: adversary-a-git-file-is-skipped-as-the-guidance-says
+    holds: [output]
+    fixture:
+      files:
+        .git: "gitdir: ../main/.git/worktrees/impl-search\n"
+        notes.md: "the worktrees are managed\n"
+    call: {operation: search.grep, input: {pattern: worktrees}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: notes.md, line: 1, text: the worktrees are managed}
+        truncated: false
+      files: {.git: unchanged}
+  - name: adversary-a-binary-file-that-is-valid-utf-8-is-not-searched
+    holds: [output]
+    fixture:
+      files:
+        blob.dat: "needle\0\0\0\x01\x02\n"
+        text.txt: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: text.txt, line: 1, text: needle}
+        truncated: false
+      files: {blob.dat: unchanged}

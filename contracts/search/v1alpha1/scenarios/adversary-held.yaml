@@ -1,0 +1,63 @@
+format: tool-conformance/1
+toolset: search
+version: v1alpha1
+scenarios:
+  - name: adversary-a-line-of-400-characters-is-whole-and-one-of-401-is-cut-on-a-character
+    holds: [bounds, output]
+    fixture:
+      files:
+        wide.txt: "needleéééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\nneedleééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\nneedle😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\n"
+    call: {operation: search.grep, input: {pattern: needle, context: 1}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - path: wide.txt
+            line: 1
+            text: &four-hundred "needleéééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+            line_truncated: false
+            before: []
+            after: [{line: 2, text: *four-hundred, line_truncated: true}]
+          - path: wide.txt
+            line: 2
+            text: *four-hundred
+            line_truncated: true
+            before: [{line: 1, text: *four-hundred, line_truncated: false}]
+            after: [{line: 3, text: &four-hundred-wide "needle😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀", line_truncated: true}]
+          - path: wide.txt
+            line: 3
+            text: *four-hundred-wide
+            line_truncated: true
+            before: [{line: 2, text: *four-hundred, line_truncated: true}]
+            after: []
+        truncated: false
+      files: {wide.txt: unchanged}
+  - name: adversary-a-file-over-one-mebibyte-the-glob-does-not-name-is-neither-read-nor-counted
+    holds: [bounds, output]
+    fixture:
+      dir: fixtures/large-files
+    call: {operation: search.grep, input: {pattern: needle, glob: exact.txt}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: exact.txt, line: 1, line_truncated: true}
+        truncated: false
+        skipped_large_files: 0
+        skipped_large_paths: []
+        glob: exact.txt
+  - name: adversary-links-below-the-start-that-land-elsewhere-inside-are-followed
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/adversary-sub-link
+    call: {operation: search.grep, input: {pattern: needle, path: sub}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: sub/across/x.txt, line: 1, text: needle}
+          - {path: sub/alias.txt, line: 1, text: needle}
+          - {path: sub/own.txt, line: 1, text: needle}
+        truncated: false
+        depth_bound_reached: false
+      files: {sub/across: unchanged, sub/alias.txt: unchanged}
