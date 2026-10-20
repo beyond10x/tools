@@ -1,0 +1,76 @@
+format: tool-conformance/1
+toolset: code-editor
+version: v1alpha1
+scenarios:
+  - name: adversary-write-a-directory-spelled-with-a-trailing-slash-is-not-a-file
+    holds: [subjects]
+    fixture:
+      files: {dir/keep: "keep\n"}
+    call: {operation: code.write, input: {path: "dir/", text: "nope\n"}}
+    expect:
+      error: code.NotAFile
+      output: {path: "dir/"}
+      files:
+        dir/keep: unchanged
+  - name: adversary-edit-a-directory-spelled-with-a-trailing-slash-is-not-a-file
+    holds: [subjects]
+    fixture:
+      files: {dir/keep: "keep\n"}
+    call: {operation: code.edit, input: {path: "dir/", old: keep, new: x}}
+    expect:
+      error: code.NotAFile
+      output: {path: "dir/"}
+      files:
+        dir/keep: unchanged
+  - name: adversary-delete-a-directory-spelled-with-a-trailing-slash-is-not-a-file
+    holds: [subjects]
+    fixture:
+      files: {dir/keep: "keep\n"}
+    call: {operation: code.delete, input: {path: "dir/"}}
+    expect:
+      error: code.NotAFile
+      output: {path: "dir/"}
+      files:
+        dir/keep: unchanged
+  - name: adversary-move-onto-a-directory-spelled-with-a-trailing-slash-is-refused-as-exists
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "x\n", dir/keep: "keep\n"}
+    call: {operation: code.move, input: {from: a.txt, to: "dir/"}}
+    expect:
+      error: code.Exists
+      output: {path: "dir/"}
+      files:
+        a.txt: unchanged
+        dir/keep: unchanged
+  - name: adversary-patch-an-identity-edit-beside-a-real-one-counts-two-and-shows-one-hunk
+    holds: [output, effects]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: one, new: one}
+          - {old: two, new: TWO}
+    expect:
+      outcome: ok
+      output:
+        applied: 2
+        diff: {$contains: "-two\n+TWO\n"}
+        sha256: {$sha256_of: a.txt}
+      files:
+        a.txt: {equals: "one\nTWO\n"}
+  - name: adversary-edit-an-old-equal-to-new-answers-exactly-the-two-header-lines
+    holds: [output]
+    fixture:
+      files: {src/a.txt: "one\ntwo\n"}
+    call: {operation: code.edit, input: {path: src/a.txt, old: one, new: one}}
+    expect:
+      outcome: ok
+      output:
+        path: src/a.txt
+        diff: "--- src/a.txt\n+++ src/a.txt\n"
+      files:
+        src/a.txt: unchanged
