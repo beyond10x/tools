@@ -157,6 +157,28 @@ Logs: `<root>/coordinator/scratch/gate/`. No step skipped itself.
 
 The closing store commit and the merge of `wave/w2` into `main` follow this page.
 
+| sha | what |
+|---|---|
+| `2786d93` | the closing store commit: evidence, moves, filed stories, README, CHANGELOG, design, this page; the four review records recreated with `$HOME` (D8) |
+| `481beca` | merge of `wave/w2` into `main`, made locally as the bot and pushed, as wave t1 did (the ruleset on `main` requires the bot as author and committer); CI on pull request 3 green before it (Security and privacy pass, task check pass 1m44s); GitHub shows the pull request merged |
+
+### After the wave: the release
+
+Release `0.2.0`, approved with the wave because metaharness pins it once the contract documents are
+merged: a `release: tools 0.2.0` commit on `release/0.2.0` (version, `Cargo.lock`, the changelog
+date, this section), the gate, a pull request for CI, the merge into `main` as the bot, the
+annotated tag `0.2.0` on that merge commit by the bot, and the GitHub release.
+
+### Worktrees
+
+The three unit trees were finished with `worktree finish --discard-cache --archive` (1,336, 494 and
+582 MiB of `target/` discarded) and removed with `worktree gc --apply` by id after their commits
+were on the pushed `wave/w2`; their branches were deleted with `git branch -d` once `main` held
+them. The integration tree `plan-after-t1` carries the release branch and is finished after the
+tag. The wave root `$HOME/.cache/tools-wave-w2/` (briefs, correction rounds, every agent's logs,
+the adversaries' scratch copies with their own `target/` directories, the harness snapshot, the
+review texts as returned) is left for the operator to read and remove.
+
 ### What each unit cost (tokens are each agent's cumulative total; uses and minutes summed over its turns)
 
 | unit | implementor | adversary | passes | corrections | findings |

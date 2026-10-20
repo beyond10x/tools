@@ -6,6 +6,11 @@ the bare version.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
+Wave w2: the process toolset, the contract documents readable without an implementation, the capped
+glob walk, and every crate under Apache-2.0. metaharness pins this tag.
+
 ### Added
 
 - `process` v1alpha1 (`process.run`) with its conformance suite (31 scenarios), and
