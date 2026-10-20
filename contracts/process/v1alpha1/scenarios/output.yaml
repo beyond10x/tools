@@ -1,0 +1,83 @@
+format: tool-conformance/1
+toolset: process
+version: v1alpha1
+scenarios:
+  - name: output-over-the-cap-keeps-both-ends-and-names-what-was-omitted
+    holds: [bounds, output]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            a=a; z=z; i=0
+            while [ "$i" -lt 16 ]; do a="$a$a"; z="$z$z"; i=$((i + 1)); done
+            printf '%s%s' "$a" "$z"
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: {$contains: "a\n… 65536 bytes omitted here …\nz"}
+        stderr: ""
+        truncated: true
+        omitted_bytes: 65536
+  - name: standard-error-is-capped-the-same-way-and-standard-output-is-not-touched
+    holds: [bounds, output]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            a=a; z=z; i=0
+            while [ "$i" -lt 16 ]; do a="$a$a"; z="$z$z"; i=$((i + 1)); done
+            printf '%s%s' "$a" "$z" >&2
+            printf small
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: small
+        stderr: {$contains: "a\n… 65536 bytes omitted here …\nz"}
+        truncated: true
+        omitted_bytes: 65536
+  - name: output-of-exactly-the-cap-is-kept-whole
+    holds: [bounds]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            a=a; z=z; i=0
+            while [ "$i" -lt 15 ]; do a="$a$a"; z="$z$z"; i=$((i + 1)); done
+            printf '%s%s' "$a" "$z"
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: {$contains: az}
+        truncated: false
+        omitted_bytes: 0
+  - name: a-cut-lands-between-characters-and-the-count-includes-the-bytes-it-moved
+    holds: [output]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            e='€'; i=0
+            while [ "$i" -lt 15 ]; do e="$e$e"; i=$((i + 1)); done
+            printf '%s' "$e"
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: {$contains: "€\n… 32772 bytes omitted here …\n€"}
+        truncated: true
+        omitted_bytes: 32772

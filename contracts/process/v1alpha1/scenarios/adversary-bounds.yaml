@@ -1,0 +1,16 @@
+format: tool-conformance/1
+toolset: process
+version: v1alpha1
+scenarios:
+  - name: adversary-a-descendant-holding-the-output-after-its-shell-ended-is-killed-at-the-bound
+    holds: [bounds]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "(sleep 2; printf late) & printf started"]
+        timeout_ms: 300
+    expect:
+      outcome: ok
+      output:
+        stdout: started
+        timeout_ms: 300
