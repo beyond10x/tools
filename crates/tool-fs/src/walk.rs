@@ -1,18 +1,23 @@
 //! The bounded walk under one directory ([`walk`]), the containment check every entry it descends
 //! into is re-checked against ([`contained`]), and the glob a `fs.glob` call matches with
 //! ([`PathGlob`]).
+//!
+//! Public so that every toolset that reads the tree walks it the same way: the `search` toolset
+//! walks with these, so its skipped directories, depth bound, link handling and glob rule are
+//! `fs.glob`'s, and a fix here reaches both rather than one of two copies.
 
 use std::fs;
 use std::path::Path;
 
 use crate::error::FsError;
 
-/// How deep under its starting directory a walk descends before it stops.
+/// How deep under its starting directory a walk descends before it stops: a directory this many
+/// levels down is read, one further is not.
 ///
 /// A bound rather than none: a deep or cyclic tree would otherwise hold the run open. The figure
 /// is in the contract's guidance, because a bound the model cannot read is one it cannot work
 /// around, and `fs.glob` answers `depth_bound_reached` when it bit.
-pub(crate) const MAX_WALK_DEPTH: usize = 12;
+pub const MAX_WALK_DEPTH: usize = 12;
 
 /// Directories skipped while walking. Each is either machine output or another tool's private
 /// state, and including them buries the answer the person asked for.
@@ -21,7 +26,7 @@ pub(crate) const MAX_WALK_DEPTH: usize = 12;
 /// are skipped" tells a model that something was left out and not *what*, so a model looking for
 /// a file under `target/` reads a complete-looking empty answer and concludes the file is not
 /// there.
-pub(crate) const SKIPPED: &[&str] = &[".git", "target", "node_modules", ".venv", "__pycache__"];
+pub const SKIPPED: &[&str] = &[".git", "target", "node_modules", ".venv", "__pycache__"];
 
 #[cfg(test)]
 thread_local! {
@@ -31,16 +36,21 @@ thread_local! {
     pub(crate) static VISITED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// What one [`walk`] frame reports to the frame above it.
-#[derive(Clone, Copy, Default)]
-pub(crate) struct Walked {
+/// What one [`walk`] frame reports to the frame above it, and what the outermost one reports to
+/// the caller.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Walked {
     /// [`MAX_WALK_DEPTH`] stopped a descent somewhere in the part of the tree walked.
-    pub(crate) bounded: bool,
+    pub bounded: bool,
     /// `visit` answered `false`: nothing after that entry was walked, in this frame or any above.
-    pub(crate) stopped: bool,
+    pub stopped: bool,
 }
 
 /// Walks files under `directory`, calling `visit` until it returns `false`.
+///
+/// `directory` may be a file, which is visited alone. Call it with `depth` 0 and with the
+/// workspace root as `boundary`; every file is visited under `directory` joined with the entry
+/// names below it, so a link inside the workspace is visited under the link's own path.
 ///
 /// Every entry is re-checked against `boundary`. Checking only the path the caller supplied is
 /// not enough: `is_dir` and `read_dir` both follow symlinks, so a link inside the workspace
@@ -63,7 +73,7 @@ pub(crate) struct Walked {
 /// [`SKIPPED`] directories are not reported the same way: they are named in the contract's
 /// guidance, so a model reads *which* directories are not walked before it calls rather than
 /// afterwards.
-pub(crate) fn walk(
+pub fn walk(
     directory: &Path,
     boundary: &Path,
     depth: usize,
@@ -116,8 +126,10 @@ pub(crate) fn walk(
     walked
 }
 
-/// Whether `path` really lives inside `boundary`, following every link on the way.
-pub(crate) fn contained(path: &Path, boundary: &Path) -> bool {
+/// Whether `path` really lives inside `boundary`, following every link on the way. `boundary`
+/// must itself be canonical; a path that names nothing (a dangling link included) lands nowhere
+/// and is not inside.
+pub fn contained(path: &Path, boundary: &Path) -> bool {
     path.canonicalize()
         .is_ok_and(|resolved| resolved.starts_with(boundary))
 }
@@ -129,7 +141,8 @@ pub(crate) fn contained(path: &Path, boundary: &Path) -> bool {
 /// there. That is ripgrep's rule, taken rather than invented: a model that asks for `*.rs` means
 /// every Rust file, and answering it with the four in the workspace root would read as *there are
 /// four*.
-pub(crate) struct PathGlob {
+#[derive(Debug)]
+pub struct PathGlob {
     matcher: globset::GlobMatcher,
     by_name: bool,
 }
@@ -141,7 +154,7 @@ impl PathGlob {
     ///
     /// The glob does not compile, with globset's own words: a pattern nobody can match is refused
     /// rather than quietly matching nothing.
-    pub(crate) fn compile(pattern: &str) -> Result<Self, FsError> {
+    pub fn compile(pattern: &str) -> Result<Self, FsError> {
         let matcher = globset::GlobBuilder::new(pattern)
             .literal_separator(true)
             .build()
@@ -156,7 +169,9 @@ impl PathGlob {
         })
     }
 
-    pub(crate) fn matches(&self, relative: &str) -> bool {
+    /// Whether the workspace-relative path `relative` (`/`-separated) matches: by its last
+    /// component when the glob has no `/`, as a whole when it has one.
+    pub fn matches(&self, relative: &str) -> bool {
         let candidate = if self.by_name {
             relative.rsplit('/').next().unwrap_or(relative)
         } else {

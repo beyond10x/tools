@@ -12,6 +12,11 @@
 //! implementation; and the mutants the suite is checked against. Left in harness: `write`, `edit`
 //! and `resolve_new` (the code-editor toolset), `grep`, `exec` and the `Operations` trait.
 //!
+//! The walk is shared, not copied: [`walk`](mod@walk) is public so a toolset that reads the tree
+//! (the `search` toolset's `search.grep`) walks it exactly as `fs.glob` does, with the same
+//! skipped directories, depth bound, containment re-check and glob rule, and a fix to the walk
+//! reaches both.
+//!
 //! # Where it differs from harness 0.13.3
 //!
 //! Four corrections, each pinned by a scenario or a test. A glob's `truncated` is set only when
@@ -39,7 +44,7 @@ mod error;
 mod line;
 mod toolset;
 pub mod types;
-mod walk;
+pub mod walk;
 
 #[cfg(test)]
 mod tests;

@@ -119,11 +119,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "b10x-tool-search"
+version = "0.2.0"
+dependencies = [
+ "b10x-tool-contract",
+ "b10x-tool-fs",
+ "b10x-tool-search",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "b10x-tool-toolchain"
 version = "0.2.0"
 dependencies = [
  "b10x-tool-contract",
+ "b10x-tool-process",
+ "b10x-tool-toolchain",
  "regex",
+ "schemars",
  "serde",
  "serde_json",
  "serde_yaml_ng",

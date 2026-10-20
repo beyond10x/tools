@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T12:31:10Z",
+  "actor": "human:timo",
+  "artifact": "story:build-test-contract",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p b10x-tool-toolchain --locked --no-fail-fast; tool-contract validate contracts/",
+    "reference": "base 1813c93 has no build-test contract or executor (new behaviour) vs treatment: exit 0, lanes 49/6/8/3/1 passed, conformance 44 of 44, six mutants each killed, build-test contract ok; coordinator read the read-path landing check (executor.rs 302-330, 504-512); coordinator/scratch/verify-build-test.log under the wave root"
+  }
+}

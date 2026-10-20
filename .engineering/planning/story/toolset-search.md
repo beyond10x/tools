@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: story:toolset-search
 kind: story
-status: draft
+status: implemented
 title: The search toolset has a contract, a conformance suite and a default implementation
 relations:
 - decomposes: epic:tool-contracts
 - depends_on: story:toolset-fs
 - depends_on: story:fs-glob-stops-at-the-cap
 scope:
+- confidence: cited
+  path: Cargo.lock
 - confidence: cited
   path: contracts/search/v1alpha1
 - confidence: inferred
@@ -17,7 +19,11 @@ scope:
   path: crates/tool-fs/src/walk.rs
 - confidence: cited
   path: crates/tool-search
-revision: 4
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-20T09:18:49Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-10-20T09:18:50Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-20T12:41:29Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":9,"verification":1}}}
 ---
 ## Outcome
 
@@ -45,4 +51,6 @@ named home; atlas ADR 0097 moves all of harness's tools here. Phase T3 in
 
 - The suite passes against `crates/tool-search`.
 - A literal pattern, a regular expression, a glob filter and context lines answer as harness's
-  `search` does, including `withheld` and `depth_bound_reached`.
+  `search` does, including the large files it did not inspect (`skipped_large_files`,
+  `skipped_large_paths`, the names harness 0.13.3 and 0.14.1 answer; this line said `withheld`
+  until 2026-10-20, corrected after the implementor checked both tags) and `depth_bound_reached`.
