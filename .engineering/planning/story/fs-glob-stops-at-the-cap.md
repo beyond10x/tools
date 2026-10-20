@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:fs-glob-stops-at-the-cap
 kind: story
-status: draft
+status: active
 title: fs.glob stops walking once max_results matching paths are answered
 relations:
 - decomposes: epic:tool-contracts
@@ -12,7 +12,10 @@ scope:
   path: crates/tool-fs/src/lib.rs
 - confidence: cited
   path: crates/tool-fs/src/walk.rs
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-20T07:48:36Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-20T07:48:36Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

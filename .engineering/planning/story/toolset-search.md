@@ -7,12 +7,17 @@ title: The search toolset has a contract, a conformance suite and a default impl
 relations:
 - decomposes: epic:tool-contracts
 - depends_on: story:toolset-fs
+- depends_on: story:fs-glob-stops-at-the-cap
 scope:
 - confidence: cited
   path: contracts/search/v1alpha1
+- confidence: inferred
+  path: crates/tool-fs/src/lib.rs
+- confidence: inferred
+  path: crates/tool-fs/src/walk.rs
 - confidence: cited
   path: crates/tool-search
-revision: 2
+revision: 4
 ---
 ## Outcome
 
@@ -30,6 +35,11 @@ named home; atlas ADR 0097 moves all of harness's tools here. Phase T3 in
 
 - `contracts/search/v1alpha1/` (new)
 - `crates/tool-search/` (new)
+- `crates/tool-fs/src/walk.rs` and `crates/tool-fs/src/lib.rs` (inferred, 2026-10-20): the `walk`
+  this story reuses is `pub(crate)` in tool-fs (`crates/tool-fs/src/walk.rs:43`, `mod walk;` at
+  `crates/tool-fs/src/lib.rs:42`), so tool-search reaches it only once tool-fs exports it.
+  `story:fs-glob-stops-at-the-cap` changes what `walk` returns in the same file, so this story lands
+  after that one rather than beside it.
 
 ## Acceptance
 
