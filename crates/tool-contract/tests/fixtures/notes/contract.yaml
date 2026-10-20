@@ -1,0 +1,88 @@
+format: tool-contract/1
+toolset: notes
+version: v1alpha1
+summary: A two-operation fixture toolset over one workspace root, used by this crate's tests.
+types:
+  - name: notes.Kind
+    kind: enum
+    variants: [file, directory]
+  - name: notes.Window
+    kind: struct
+    fields:
+      - {name: from, type: Integer}
+      - {name: to, type: Integer}
+      - {name: total, type: Optional<Integer>}
+errors:
+  - name: notes.NotFound
+    summary: No file at the path.
+    fields: [{name: path, type: String}]
+  - name: notes.PreconditionFailed
+    summary: The digest of the file differs from expected_sha256; the file is unchanged.
+    fields: [{name: expected, type: String}, {name: actual, type: String}]
+operations:
+  - name: notes.read
+    summary: Read a window of lines from a file, with the digest of the whole file.
+    guidance: Page with offset and limit; sha256 is the digest of the whole file, not the window.
+    renderings: {claude: Read, codex: read_file, mcp: notes_read}
+    input:
+      - {name: path, type: String, description: "The file, relative to the workspace root."}
+      - {name: offset, type: Optional<Integer>, description: "The first line, 1-based."}
+      - {name: limit, type: Optional<Integer>, description: "How many lines at most."}
+    output:
+      - {name: path, type: String}
+      - {name: text, type: String}
+      - {name: lines, type: notes.Window}
+      - {name: truncated, type: Boolean}
+      - {name: sha256, type: Optional<String>}
+      - {name: kind, type: notes.Kind}
+    outcomes:
+      - {name: read, summary: The window is answered.}
+      - {name: not-found, error: notes.NotFound}
+    profile:
+      effects: [read]
+      consequences: []
+      risk: low
+      idempotency: idempotent
+      preconditions: []
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+        output_bytes: {default: 65536, max: 262144}
+      paging: {offset: offset, limit: limit, truncated: truncated, digest: sha256}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "notes.read({path})"}
+      placement: local
+      capability: workspace.read
+      output: {untrusted: true, failure_as_result: true}
+  - name: notes.write
+    summary: Write a file whole, guarded by the digest of the file it replaces.
+    renderings: {claude: Write, codex: write_file, mcp: notes_write}
+    input:
+      - {name: path, type: String}
+      - {name: text, type: String}
+      - {name: expected_sha256, type: Optional<String>}
+      - {name: labels, type: "Map<String, String>"}
+      - {name: tags, type: List<String>}
+    output:
+      - {name: path, type: String}
+      - {name: bytes, type: Integer}
+      - {name: sha256, type: String}
+    outcomes:
+      - {name: written, summary: The file holds text.}
+      - {name: precondition-failed, error: notes.PreconditionFailed}
+    profile:
+      effects: [write]
+      consequences: []
+      risk: low
+      idempotency: idempotent
+      preconditions: [expected_sha256]
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "notes.write({path})"}
+      placement: local
+      capability: workspace.write
+      output: {untrusted: false, failure_as_result: true}
