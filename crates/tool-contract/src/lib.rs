@@ -7,6 +7,7 @@
 pub mod conformance;
 pub mod digest;
 pub mod document;
+pub mod documents;
 pub mod mutants;
 pub mod types;
 pub mod validate;
