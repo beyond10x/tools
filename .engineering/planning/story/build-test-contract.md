@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:build-test-contract
 kind: story
-status: active
+status: implemented
 title: The build-test toolset has a static contract and a conformance suite over the toolchain crate
 relations:
 - decomposes: epic:tool-contracts
@@ -15,10 +15,11 @@ scope:
   path: contracts/build-test/v1alpha1
 - confidence: cited
   path: crates/tool-toolchain
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-20T09:18:48Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-20T09:18:49Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-20T12:41:27Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":9,"verification":1}}}
 ---
 ## Outcome
 
@@ -43,4 +44,6 @@ that `harness-tools` holds today in `catalogue.rs` (`invoke_toolchain`) and `too
 
 - `tool-contract validate contracts/build-test/v1alpha1` exits 0.
 - The suite passes against `crates/tool-toolchain`; a tool whose `empty_stdout` check fails answers
-  a refusal naming the formatting check, as harness's executor does.
+  the error `build-test.CheckFailed` naming the formatting check (harness answered a refusal with
+  the message `formatting check failed: …`; amended 2026-10-20 after
+  `review-result:adversary-build-test-pass-1`, F7, to the error the executor declares).

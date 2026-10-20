@@ -6,6 +6,47 @@ the bare version.
 
 ## [Unreleased]
 
+### Added
+
+- `build-test` v1alpha1: a static contract for the 20 operations the five built-in toolchain
+  providers (rust, go, taskfile, npm, yarn) derive, held equal to the derivation by a test, with a
+  conformance suite of 44 scenarios over a Cargo workspace, a Go module, a Taskfile, an npm and a
+  yarn project, all offline. `b10x-tool-toolchain` gains `executor`, harness 0.14.1's toolchain
+  executor moved here over `b10x-tool-process`: the active providers' declared program set, each
+  argv under the time its caller has left, a failed `empty_stdout` check answered as
+  `build-test.CheckFailed`, and every path argument judged where it lands before anything starts.
+  Six mutants, each failed by the suite. Every operation declares `placement: local`,
+  `effects: [process, write, network, secret]`, every consequence and `risk: high`, because the
+  runner confines nothing beyond the environment, the bounds and the paths.
+- `search` v1alpha1 (`search.grep`) with its conformance suite (53 scenarios), and
+  `b10x-tool-search`, harness 0.14.1's `grep` moved here: a literal substring by default or a
+  regular expression, a glob filter by `fs.glob`'s rule, up to 5 numbered lines of context either
+  side, at most 200 matches, lines cut at 400 characters with `line_truncated`, files over 1 MiB
+  counted and named in `skipped_large_files` and `skipped_large_paths`, and `depth_bound_reached`.
+  It declares `risk: low`, as `fs.read` does, and walks with `b10x-tool-fs`'s walk, not a copy.
+- `tool_fs::walk` in `b10x-tool-fs` is public: `walk`, `Walked`, `contained`, `SKIPPED`,
+  `MAX_WALK_DEPTH` and `PathGlob`. No `fs` behaviour changes.
+
+### Changed
+
+- Against harness 0.14.1, a build-test operation whose plan can start several processes
+  (`rust_fmt`) always answers `runs`, a list, where harness answered an object when one process
+  ran; the processes of one call share the time left instead of each getting all of it, and none
+  starts once it is gone.
+
+### Fixed
+
+- Pre-existing in harness 0.14.1's toolchain executor: a path was judged by its spelling, so
+  `go_fmt` on a link into a refused directory rewrote the file behind it; every path argument is
+  now judged where it lands, and one that lands outside the workspace is refused. A value
+  beginning with `-` reached the program as an option nobody declared (`-w` turned
+  `go_fmt_check` into a rewrite); it is refused, except after a declared `--` separator.
+- Against harness 0.14.1's `grep`, `search.grep` answers `truncated: false` for exactly
+  `max_results` matches; refuses an empty `glob` and a `path` that climbs out of the workspace;
+  passes over a named pipe rather than blocking on it; does not search an entry named like a
+  skipped directory, a worktree's `.git` file among them; and treats a file holding a NUL byte as
+  binary and does not search it.
+
 ## [0.2.0] - 2026-10-20
 
 Wave w2: the process toolset, the contract documents readable without an implementation, the capped

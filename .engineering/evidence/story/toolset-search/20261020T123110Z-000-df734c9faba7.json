@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T12:31:10Z",
+  "actor": "human:timo",
+  "artifact": "story:toolset-search",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p b10x-tool-search -p b10x-tool-fs --locked --no-fail-fast; tool-contract validate contracts/",
+    "reference": "base 1813c93 has no search toolset (new behaviour) vs treatment: exit 0, 15 lanes ok, fs lanes unchanged, the 960-call harness oracle agrees outside documented changes, search contract ok; coordinator/scratch/verify-search.log under the wave root"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T12:41:27Z",
+  "actor": "human:timo",
+  "artifact": "story:build-test-contract",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the six gate steps of Taskfile check run one by one on wave/w3 at aad0a22 with the closing docs and store edits in the tree",
+    "reference": "every step exit 0; 49 test lanes, 347 tests passed, 0 failed; five contract documents ok; logs coordinator/scratch/gate/ under the wave root"
+  }
+}

@@ -269,7 +269,9 @@ counting bound it is `null`, like `lines.total`. A precondition that does not ma
 | `crates/harness-tools/src/local.rs` | read, list, find, walk, line reader, containment | `tool-fs` |
 | `crates/harness-tools/src/local.rs` | write, edit, `resolve_new` | `tool-code-editor` |
 | `crates/harness-tools/src/local.rs` at harness 0.14.1 | `exec`, `terminate`, `drain`, `read_ends`, `keep_both_ends`, output caps, `INHERITED_ENV` | `tool-process` (wave w2) |
-| `crates/harness-tools/src/local.rs` | `grep`, `search_expression`, `around`, `cut_to` | stays until the `search` toolset (wave w3) |
+| `crates/harness-tools/src/local.rs` at harness 0.14.1 | `grep`, `search_expression`, `around`, `cut_to`, the search constants | `tool-search` (wave w3), walking with `tool-fs`'s public walk |
+| `crates/harness-tools/src/toolchain.rs` at harness 0.14.1 | `programs`, `entry_names`, `plan` | `tool-toolchain` `executor` (wave w3) |
+| `crates/harness-tools/src/catalogue.rs` at harness 0.14.1 | `invoke_toolchain` | `tool-toolchain` `executor::Executor::run` (wave w3) |
 | `crates/harness-tools/src/catalogue.rs`, `verbs.rs`, `flat.rs`, `scope.rs`, `toolchain.rs`, `operations.rs` | the publication over `harness-wire` | stays in harness; T2 rewires it over these crates |
 | `crates/harness-toolchain/src/lib.rs`, `builtins/*.yaml` | all | `tool-toolchain` |
 

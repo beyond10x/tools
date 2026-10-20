@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-20T11:38:30Z",
+  "actor": "human:timo",
+  "artifact": "story:build-test-contract",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-build-test-pass-1",
+    "review": "review-result:adversary-build-test-pass-1",
+    "outcome": "fixed"
+  }
+}
