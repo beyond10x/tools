@@ -17,7 +17,7 @@ use crate::types::{
 };
 
 /// The `fs` v1alpha1 contract document, compiled in so the binary carries the contract it claims.
-pub const CONTRACT_YAML: &str = include_str!("../../../contracts/fs/v1alpha1/contract.yaml");
+pub const CONTRACT_YAML: &str = tool_contract::documents::FS_V1ALPHA1;
 
 /// The parsed `fs` v1alpha1 contract this crate implements, parsed once.
 ///

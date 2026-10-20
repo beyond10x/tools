@@ -36,8 +36,7 @@ use tool_contract::conformance::{Outcome, Toolset};
 use tool_contract::digest::sha256_hex;
 
 /// The contract document this crate implements, as text.
-pub const CONTRACT_YAML: &str =
-    include_str!("../../../contracts/code-editor/v1alpha1/contract.yaml");
+pub const CONTRACT_YAML: &str = tool_contract::documents::CODE_EDITOR_V1ALPHA1;
 
 /// The input of `code.write`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
