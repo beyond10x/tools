@@ -1,0 +1,15 @@
+format: tool-conformance/1
+toolset: build-test
+version: v1alpha1
+scenarios:
+  - name: adversary-a-link-into-a-refused-path-is-refused-before-gofmt-starts
+    holds: [subjects, effects]
+    fixture: {dir: fixtures/adversary-symlink}
+    call:
+      operation: build-test.go_fmt
+      input: {paths: [alias.go]}
+    expect:
+      error: build-test.Refused
+      files:
+        protected/kept.go: unchanged
+        alias.go: unchanged

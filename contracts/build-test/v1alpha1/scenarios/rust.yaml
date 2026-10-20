@@ -1,0 +1,279 @@
+format: tool-conformance/1
+toolset: build-test
+version: v1alpha1
+scenarios:
+  - name: rust-check-type-checks-the-workspace
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_check
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [cargo, check, --locked, --offline]
+        exit: 0
+        stderr: {$contains: Finished}
+        truncated: false
+        omitted_bytes: 0
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        Cargo.lock: unchanged
+        src/lib.rs: unchanged
+  - name: rust-build-builds-the-named-package
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_build
+      input: {package: fixture}
+    expect:
+      outcome: ok
+      output:
+        argv: [cargo, build, --locked, --offline, --package, fixture]
+        exit: 0
+        stderr: {$contains: Finished}
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        Cargo.lock: unchanged
+  - name: rust-test-runs-the-tests
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_test
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [cargo, test, --locked, --offline]
+        exit: 0
+        stdout: {$contains: "test tests::greets ... ok"}
+        timed_out: false
+        timeout_ms: 600000
+  - name: a-failing-rust-test-is-a-result-and-not-an-error
+    holds: [output]
+    fixture:
+      dir: fixtures/cargo
+      files:
+        src/lib.rs: |
+          pub fn greeting() -> &'static str {
+              "hello from the cargo fixture"
+          }
+
+          #[cfg(test)]
+          mod tests {
+              #[test]
+              fn greets() {
+                  assert_eq!(super::greeting(), "a different greeting");
+              }
+          }
+    call:
+      operation: build-test.rust_test
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        exit: 101
+        stdout: {$contains: "test tests::greets ... FAILED"}
+        timed_out: false
+  - name: rust-clippy-passes-a-clean-workspace
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_clippy
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [cargo, clippy, --locked, --offline, --, -D, warnings]
+        exit: 0
+        timed_out: false
+        timeout_ms: 600000
+  - name: rust-fmt-check-passes-a-formatted-workspace
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_fmt_check
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [cargo, fmt, --all, --, --check]
+        exit: 0
+        stdout: ""
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        src/lib.rs: unchanged
+        src/main.rs: unchanged
+  - name: rust-fmt-check-answers-an-unformatted-file-as-a-failed-run
+    holds: [output, effects]
+    fixture:
+      dir: fixtures/cargo
+      files:
+        src/lib.rs: |
+          pub fn greeting()->&'static str{"hello from the cargo fixture"}
+    call:
+      operation: build-test.rust_fmt_check
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        exit: 1
+        stdout: {$contains: Diff in}
+      files:
+        src/lib.rs: unchanged
+  - name: rust-fmt-formats-only-the-named-file
+    holds: [effects, idempotency, determinism, bounds, output, subjects]
+    fixture:
+      dir: fixtures/cargo
+      files:
+        src/lib.rs: |
+          pub fn greeting()->&'static str{"hello from the cargo fixture"}
+
+          #[cfg(test)]
+          mod tests{#[test] fn greets(){assert_eq!(super::greeting(),"hello from the cargo fixture");}}
+        src/main.rs: |
+          fn main(){println!("{}",fixture::greeting());}
+    call:
+      operation: build-test.rust_fmt
+      input: {paths: [src/lib.rs]}
+    expect:
+      outcome: ok
+      output:
+        runs:
+          - argv: [rustfmt, src/lib.rs]
+            exit: 0
+            truncated: false
+            timed_out: false
+            timeout_ms: 600000
+      files:
+        src/lib.rs:
+          equals: |
+            pub fn greeting() -> &'static str {
+                "hello from the cargo fixture"
+            }
+
+            #[cfg(test)]
+            mod tests {
+                #[test]
+                fn greets() {
+                    assert_eq!(super::greeting(), "hello from the cargo fixture");
+                }
+            }
+        src/main.rs: unchanged
+  - name: rust-fmt-runs-one-process-per-named-file
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/cargo
+      files:
+        src/main.rs: |
+          fn main(){println!("{}",fixture::greeting());}
+    call:
+      operation: build-test.rust_fmt
+      input: {paths: [src/lib.rs, src/main.rs]}
+    expect:
+      outcome: ok
+      output:
+        runs:
+          - {argv: [rustfmt, src/lib.rs], exit: 0}
+          - {argv: [rustfmt, src/main.rs], exit: 0}
+      files:
+        src/lib.rs: unchanged
+        src/main.rs:
+          equals: |
+            fn main() {
+                println!("{}", fixture::greeting());
+            }
+  - name: a-path-the-write-scope-refuses-is-refused-before-rustfmt-starts
+    holds: [subjects, effects]
+    fixture:
+      dir: fixtures/cargo
+      files:
+        src/main.rs: |
+          fn main(){println!("{}",fixture::greeting());}
+        protected/kept.rs: |
+          fn kept(){}
+    call:
+      operation: build-test.rust_fmt
+      input: {paths: [src/main.rs, protected/kept.rs]}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`protected/kept.rs` is outside what this run may change"
+      files:
+        src/main.rs: unchanged
+        protected/kept.rs: unchanged
+  - name: a-path-that-leaves-the-workspace-is-refused
+    holds: [subjects]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_fmt
+      input: {paths: [../outside.rs]}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`../outside.rs` is not a contained relative path"
+  - name: rust-bench-runs-the-benchmarks-offline
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_bench
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [cargo, bench, --locked, --offline]
+        exit: 0
+        timed_out: false
+        timeout_ms: 600000
+  - name: rust-run-runs-the-named-binary
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_run
+      input: {bin: fixture}
+    expect:
+      outcome: ok
+      output:
+        argv: [cargo, run, --locked, --offline, --bin, fixture]
+        exit: 0
+        stdout: "hello from the cargo fixture\n"
+        timed_out: false
+        timeout_ms: 600000
+  - name: a-package-spelled-as-an-option-is-refused
+    holds: [effects]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_check
+      input: {package: "--frozen"}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`package` is `--frozen`, which begins with `-` and would reach `rust_check`'s program as an option"
+  - name: a-missing-required-argument-is-refused
+    holds: [output]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_run
+      input: {}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`bin` is required by `rust_run`"
+  - name: rust-fetch-resolves-the-lock-from-the-local-cache
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.rust_fetch
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [cargo, fetch, --locked, --offline]
+        exit: 0
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        Cargo.lock: unchanged

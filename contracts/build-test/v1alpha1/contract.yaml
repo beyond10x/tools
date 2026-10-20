@@ -1,0 +1,276 @@
+format: tool-contract/1
+toolset: build-test
+version: v1alpha1
+summary: >-
+  Toolchain runs over one workspace: one operation per tool of the five built-in toolchain
+  providers (rust, go, taskfile, npm, yarn), each compiling typed parameters into fixed argv and
+  running it with one of the provider's declared programs, under a wall-clock bound and an output
+  bound, and answering each process's exit status and both output streams. An implementation offers
+  the operations of the providers whose project markers the workspace carries; a call to another
+  provider's operation is refused.
+types:
+  - name: toolchain.Run
+    kind: struct
+    summary: What one process answers.
+    fields: &run
+      - {name: argv, type: List<String>, description: "The argv that was started."}
+      - {name: exit, type: Optional<Integer>, description: "The exit status; null when the program was ended by a signal, including at the timeout."}
+      - {name: stdout, type: String, description: "What the program wrote to standard output, cut to the output bound with a marker where bytes were dropped."}
+      - {name: stderr, type: String, description: "What the program wrote to standard error, cut the same way."}
+      - {name: truncated, type: Boolean, description: "Whether either stream was cut to the output bound."}
+      - {name: omitted_bytes, type: Integer, description: "How many bytes were dropped across both streams."}
+      - {name: timed_out, type: Boolean, description: "Whether the program was ended at the timeout."}
+      - {name: timeout_ms, type: Integer, description: "The wall time the run was given, in milliseconds."}
+errors:
+  - name: build-test.Refused
+    summary: "The call was not started: an argument was missing, mistyped, outside its enum, escaping the workspace or spelled as an option, a path it writes lands outside the workspace or outside the caller's write scope, no provider the workspace resolves declares the operation, the call's deadline had passed, or the program is not one the sandbox admits or could not be started; or a started program could not be reported on."
+    fields:
+      - {name: message, type: String, description: "Why the call was refused, in one sentence."}
+  - name: build-test.CheckFailed
+    summary: "The program ran and wrote to standard output, which this check reads as a failure whatever the exit status."
+    fields:
+      - {name: stdout, type: String, description: "What the program wrote to standard output, cut to the output bound."}
+operations:
+  - name: build-test.go_build
+    summary: Build Go packages with network and checksum lookup disabled.
+    input:
+      - {name: package, type: Optional<String>, description: "default ./..."}
+    output: *run
+    outcomes: &ran-refused
+      - {name: ran, summary: "The program ran to its end or its timeout; its exit status and output are the result, whatever the status."}
+      - {name: refused, summary: "Nothing was started, or a started program could not be reported on.", error: build-test.Refused}
+    profile: &go-writes
+      effects: [process, write, network, secret]
+      consequences: [money, delete, send-external, irreversible, sensitive-data]
+      risk: high
+      idempotency: non-idempotent
+      determinism: nondeterministic
+      bounds: &bounds
+        timeout_ms: {default: 600000, max: 600000}
+        output_bytes: {default: 65536, max: 65536}
+      requires: &go-requires
+        binaries: [go, gofmt]
+        env: [CGO_ENABLED, GOCACHE, GOENV, GOMODCACHE, GOPATH, GOROOT, GOSUMDB, GOTOOLCHAIN, HOME, PATH]
+        settings: [goroot]
+      placement: local
+      capability: build.run
+      output: &marks {untrusted: true, failure_as_result: true}
+  - name: build-test.go_test
+    summary: Run Go tests with network and checksum lookup disabled.
+    input:
+      - {name: package, type: Optional<String>, description: "default ./..."}
+    output: *run
+    outcomes: *ran-refused
+    profile: *go-writes
+  - name: build-test.go_vet
+    summary: Run go vet with network and checksum lookup disabled.
+    input:
+      - {name: package, type: Optional<String>, description: "default ./..."}
+    output: *run
+    outcomes: *ran-refused
+    profile: *go-writes
+  - name: build-test.go_fmt_check
+    summary: List explicitly named Go files that are not gofmt formatted.
+    guidance: "A check whose standard output is expected to be empty: anything the program writes there is answered as the check-failed outcome carrying that output, whatever the exit status."
+    input:
+      - {name: paths, type: List<String>, description: "paths relative to the workspace root, each refused when it leaves the workspace; 1 to 128 items"}
+    output: *run
+    outcomes:
+      - {name: ran, summary: "The program ran to its end or its timeout; its exit status and output are the result, whatever the status."}
+      - {name: refused, summary: "Nothing was started, or a started program could not be reported on.", error: build-test.Refused}
+      - {name: check-failed, summary: "The program ran and wrote to standard output.", error: build-test.CheckFailed}
+    profile: *go-writes
+  - name: build-test.go_fmt
+    summary: Format only the explicitly named Go source files.
+    input:
+      - {name: paths, type: List<String>, description: "paths relative to the workspace root, each refused when it leaves the workspace; 1 to 128 items"}
+    output: *run
+    outcomes: *ran-refused
+    profile:
+      effects: [process, write, network, secret]
+      consequences: [money, delete, send-external, irreversible, sensitive-data]
+      risk: high
+      idempotency: non-idempotent
+      determinism: nondeterministic
+      bounds: *bounds
+      requires: *go-requires
+      subjects:
+        - {field: paths, kind: path, pattern: "build-test.go_fmt({paths})"}
+      placement: local
+      capability: build.run
+      output: *marks
+  - name: build-test.go_bench
+    summary: Run Go benchmarks with network and checksum lookup disabled.
+    input:
+      - {name: package, type: Optional<String>, description: "default ./..."}
+    output: *run
+    outcomes: *ran-refused
+    profile: *go-writes
+  - name: build-test.go_run
+    summary: Build and run one Go package with network lookup disabled.
+    input:
+      - {name: args, type: Optional<List<String>>, description: "up to 128 items"}
+      - {name: package, type: Optional<String>, description: "default ."}
+    output: *run
+    outcomes: *ran-refused
+    profile: *go-writes
+  - name: build-test.go_fetch
+    summary: Resolve Go modules from already-present local data only.
+    output: *run
+    outcomes: *ran-refused
+    profile: *go-writes
+  - name: build-test.npm_run
+    summary: Run one statically discovered package.json script with npm.
+    input:
+      - {name: args, type: Optional<List<String>>, description: "up to 128 items"}
+      - {name: script, type: String, description: "One of the scripts the workspace's package.json declares, resolved per workspace."}
+    output: *run
+    outcomes: *ran-refused
+    profile:
+      effects: [process, write, network, secret]
+      consequences: [money, delete, send-external, irreversible, sensitive-data]
+      risk: high
+      idempotency: non-idempotent
+      determinism: nondeterministic
+      bounds: *bounds
+      requires:
+        binaries: [npm]
+        env: [HOME, NPM_CONFIG_CACHE, NPM_CONFIG_OFFLINE, PATH]
+      placement: local
+      capability: build.run
+      output: *marks
+  - name: build-test.rust_check
+    summary: "Type-check the Rust workspace with the locked dependency graph, offline."
+    input:
+      - {name: package, type: Optional<String>}
+      - {name: release, type: Optional<Boolean>}
+    output: *run
+    outcomes: *ran-refused
+    profile: &rust-writes
+      effects: [process, write, network, secret]
+      consequences: [money, delete, send-external, irreversible, sensitive-data]
+      risk: high
+      idempotency: non-idempotent
+      determinism: nondeterministic
+      bounds: *bounds
+      requires: &rust-requires
+        binaries: [cargo, rustc, rustfmt]
+        env: [CARGO_HOME, CARGO_TARGET_DIR, HOME, PATH, RUSTUP_HOME]
+        settings: [rustup]
+      placement: local
+      capability: build.run
+      output: *marks
+  - name: build-test.rust_build
+    summary: "Build the Rust workspace with the locked dependency graph, offline."
+    input:
+      - {name: package, type: Optional<String>}
+      - {name: release, type: Optional<Boolean>}
+    output: *run
+    outcomes: *ran-refused
+    profile: *rust-writes
+  - name: build-test.rust_test
+    summary: "Run Rust tests with the locked dependency graph, offline."
+    input:
+      - {name: package, type: Optional<String>}
+      - {name: release, type: Optional<Boolean>}
+    output: *run
+    outcomes: *ran-refused
+    profile: *rust-writes
+  - name: build-test.rust_clippy
+    summary: Run Clippy offline and deny warnings.
+    input:
+      - {name: package, type: Optional<String>}
+      - {name: release, type: Optional<Boolean>}
+    output: *run
+    outcomes: *ran-refused
+    profile: *rust-writes
+  - name: build-test.rust_fmt_check
+    summary: Check Rust formatting without changing source files.
+    output: *run
+    outcomes: *ran-refused
+    profile: *rust-writes
+  - name: build-test.rust_fmt
+    summary: Format only the explicitly named Rust source files.
+    input:
+      - {name: paths, type: List<String>, description: "paths relative to the workspace root, each refused when it leaves the workspace; 1 to 128 items"}
+    output:
+      - {name: runs, type: List<toolchain.Run>, description: "One run per process the plan started, in the order they ran."}
+    outcomes:
+      - {name: ran, summary: "Each process of the plan ran to its end or its timeout; their exit statuses and output are the result, whatever the statuses."}
+      - {name: refused, summary: "Nothing was started, or a started program could not be reported on.", error: build-test.Refused}
+    profile:
+      effects: [process, write, network, secret]
+      consequences: [money, delete, send-external, irreversible, sensitive-data]
+      risk: high
+      idempotency: non-idempotent
+      determinism: nondeterministic
+      bounds: *bounds
+      requires: *rust-requires
+      subjects:
+        - {field: paths, kind: path, pattern: "build-test.rust_fmt({paths})"}
+      placement: local
+      capability: build.run
+      output: *marks
+  - name: build-test.rust_bench
+    summary: Run Rust benchmarks offline.
+    input:
+      - {name: package, type: Optional<String>}
+      - {name: release, type: Optional<Boolean>}
+    output: *run
+    outcomes: *ran-refused
+    profile: *rust-writes
+  - name: build-test.rust_run
+    summary: Build and run one named Rust binary offline.
+    input:
+      - {name: args, type: Optional<List<String>>, description: "up to 128 items"}
+      - {name: bin, type: String}
+      - {name: package, type: Optional<String>}
+      - {name: release, type: Optional<Boolean>}
+    output: *run
+    outcomes: *ran-refused
+    profile: *rust-writes
+  - name: build-test.rust_fetch
+    summary: Resolve the locked Rust dependency graph from the local cache only.
+    output: *run
+    outcomes: *ran-refused
+    profile: *rust-writes
+  - name: build-test.taskfile_run
+    summary: Run one statically discovered public Taskfile task.
+    input:
+      - {name: args, type: Optional<List<String>>, description: "up to 128 items"}
+      - {name: task, type: String, description: "One of the public tasks the workspace's Taskfile declares, resolved per workspace."}
+    output: *run
+    outcomes: *ran-refused
+    profile:
+      effects: [process, write, network, secret]
+      consequences: [money, delete, send-external, irreversible, sensitive-data]
+      risk: high
+      idempotency: non-idempotent
+      determinism: nondeterministic
+      bounds: *bounds
+      requires:
+        binaries: [task]
+        env: [HOME, PATH]
+      placement: local
+      capability: build.run
+      output: *marks
+  - name: build-test.yarn_run
+    summary: Run one statically discovered package.json script with Yarn.
+    input:
+      - {name: args, type: Optional<List<String>>, description: "up to 128 items"}
+      - {name: script, type: String, description: "One of the scripts the workspace's package.json declares, resolved per workspace."}
+    output: *run
+    outcomes: *ran-refused
+    profile:
+      effects: [process, write, network, secret]
+      consequences: [money, delete, send-external, irreversible, sensitive-data]
+      risk: high
+      idempotency: non-idempotent
+      determinism: nondeterministic
+      bounds: *bounds
+      requires:
+        binaries: [yarn]
+        env: [HOME, PATH, YARN_CACHE_FOLDER, YARN_ENABLE_NETWORK]
+      placement: local
+      capability: build.run
+      output: *marks

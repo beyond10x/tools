@@ -1,15 +1,28 @@
-//! Declarative toolchain providers, resolved without executing a probe. This crate is harness's
-//! `crates/harness-toolchain` at `798325f` (harness 0.13.3), moved here with three changes: this
-//! paragraph; `pub mod contract;`, where [`contract`] derives the `build-test` operations its
-//! resolved tools publish under the `tool-contract/1` profile; and [`ResolvedProvider::plan`]
+//! Declarative toolchain providers, resolved without executing a probe, and the executor that
+//! runs what they plan. This crate is harness's `crates/harness-toolchain` at `798325f` (harness
+//! 0.13.3), moved here with five changes: this paragraph; `pub mod contract;`, where [`contract`]
+//! derives the `build-test` operations its resolved tools publish under the `tool-contract/1`
+//! profile; `pub mod executor;`, `mod toolset;` and the re-export of [`document`] and
+//! [`DOCUMENT_YAML`], where [`executor`] runs a planned operation through `b10x-tool-process`
+//! (ported from harness 0.14.1's `harness-tools`; its documentation names what moved and how it
+//! differs) and is the `build-test` v1alpha1 conformance toolset; [`ResolvedProvider::plan`]
 //! falling back to [`ResolvedProvider::tool_for`] when no tool carries the exact name, so that
-//! a published operation name plans the tool it was derived from.
+//! a published operation name plans the tool it was derived from; and, in `validate_arguments`,
+//! a value or list item that begins with `-` refused for every kind but `boolean`, unless every
+//! place the parameter reaches an argv is after a declared `rest` separator
+//! (`after_separator_only`, `refuse_option_spellings`): harness passed `-w` through a
+//! `workspace-path-list` to `gofmt -l`, which then rewrote the file, and a `string` such as `-n`
+//! to `go build` as an option nobody declared.
 //!
 //! A specification is operator policy: built-ins are compiled into the binary and custom files
 //! are read only when a caller names them. Workspace files supply project facts and enum values;
 //! they never supply a toolchain specification of their own.
 
 pub mod contract;
+pub mod executor;
+mod toolset;
+
+pub use toolset::{DOCUMENT_YAML, document};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -1675,6 +1688,9 @@ fn validate_arguments(tool: &ResolvedTool, arguments: &Value) -> Result<(), Stri
         if !valid {
             return Err(format!("`{name}` is not valid for `{}`", tool.name));
         }
+        if parameter.kind != ParameterKind::Boolean && !after_separator_only(tool, name) {
+            refuse_option_spellings(tool, name, value)?;
+        }
         if matches!(
             parameter.kind,
             ParameterKind::WorkspacePath | ParameterKind::WorkspacePathList
@@ -1694,6 +1710,68 @@ fn validate_arguments(tool: &ResolvedTool, arguments: &Value) -> Result<(), Stri
                 validate_relative(path)?;
             }
         }
+    }
+    Ok(())
+}
+
+/// Whether every place `name` reaches an argv of `tool` is a `rest` expansion after a declared
+/// separator, where a leading `-` is the program's argument and not an option.
+fn after_separator_only(tool: &ResolvedTool, name: &str) -> bool {
+    let mut after = 0;
+    for command in &tool.commands {
+        if command.for_each.as_deref() == Some(name) {
+            return false;
+        }
+        for segment in &command.argv {
+            let ArgvSegment::Dynamic(dynamic) = segment else {
+                continue;
+            };
+            let elsewhere = dynamic.arg.as_deref() == Some(name)
+                || dynamic.each.as_deref() == Some(name)
+                || dynamic
+                    .option
+                    .as_ref()
+                    .is_some_and(|option| option.arg == name)
+                || dynamic.flag.as_ref().is_some_and(|flag| flag.when == name);
+            if elsewhere {
+                return false;
+            }
+            if let Some(rest) = &dynamic.rest
+                && rest.arg == name
+            {
+                if rest.separator.is_none() {
+                    return false;
+                }
+                after += 1;
+            }
+        }
+    }
+    after > 0
+}
+
+/// Refuses a caller's value, or a list item, that begins with `-`: placed in an argv it is read
+/// by the program as an option nobody declared (`-w` turns a listing `gofmt -l` into a rewrite).
+fn refuse_option_spellings(tool: &ResolvedTool, name: &str, value: &Value) -> Result<(), String> {
+    let refuse = |held: &str, verb: &str| {
+        Err(format!(
+            "`{name}` {verb} `{held}`, which begins with `-` and would reach `{}`'s program as \
+             an option",
+            tool.name
+        ))
+    };
+    if let Some(text) = value.as_str()
+        && text.starts_with('-')
+    {
+        return refuse(text, "is");
+    }
+    if let Some(item) = value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .find(|item| item.starts_with('-'))
+    {
+        return refuse(item, "holds");
     }
     Ok(())
 }
