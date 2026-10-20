@@ -1,0 +1,26 @@
+format: tool-conformance/1
+toolset: search
+version: v1alpha1
+scenarios:
+  - name: a-missing-pattern-is-invalid-input
+    holds: [output]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {path: "."}}
+    expect:
+      error: search.InvalidInput
+      files: {a.txt: unchanged}
+  - name: a-pattern-of-the-wrong-type-is-invalid-input
+    holds: [output]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: 7}}
+    expect:
+      error: search.InvalidInput
+  - name: a-negative-context-is-invalid-input
+    holds: [output]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, context: -1}}
+    expect:
+      error: search.InvalidInput
