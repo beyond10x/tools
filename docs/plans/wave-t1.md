@@ -155,7 +155,7 @@ and a GitHub release `tools 0.1.0`, all through the bot route (`AGENTS.md` § Re
 | 2026-10-20 06:30Z | the store refused the fs pass-2 review's YAML findings block (an unquoted `: ` in a message); the refusal was sent back verbatim and the adversary re-emitted the five findings as JSON, recorded unchanged in substance. Ledger for `story:toolset-fs`: resolved 6, new 5, carried 0. J3 filed as `story:fs-glob-stops-at-the-cap` (draft). One duplicate `review_outcome fixed` record against pass 1 was appended by mistake; the store keeps both |
 | 2026-10-20 06:40Z | unit 2 (fs) correction round 2 green: unit 25→28, 70 of 70 scenarios, the scan bounded in bytes read (`next_line` takes a budget; the bound tested after every line), the path judged before the window, the first-line cut reserving a separator only where one exists; 428,790 tokens, 29 tool uses, 5.0 min. Coordinator read `next_line`/`Scan::take` and ran the tests (exit 0, same counts, `coordinator/scratch/verify-fs.log`); `review_outcome fixed` against pass 2; verification evidence recorded. Unit commit `4779bc4` (bot, gates check passed, 6 commits scanned). The merge into `wave/t1` conflicted on `Cargo.lock` as D5 planned; resolved by `git checkout --ours Cargo.lock` and `cargo update --workspace --offline` (added `globset 0.4.20`, `log 0.4.34`), committed as the merge `0b45907` (bot); the merged workspace builds `--locked`, 28 test lanes green |
 | 2026-10-20 06:50Z | all four units merged. Whole gate on `wave/t1` at `0b45907`, one exit status per step, logs under `coordinator/scratch/gate/`: steps 1 to 5 exit 0 (28 lanes, 194 tests), step 6 `tool-contract validate contracts/` exit 1 with `Too many levels of symbolic links (os error 40)`: the document walk followed the fixture links back up the tree (`fs/.../linked/up -> ..`, `code-editor/.../link-to-parent/link -> ..`); each unit tree alone had passed because the kernel cut the loop at a different depth |
-| 2026-10-20 07:05Z | coordinator fix on the integration branch (a shared file no implementor held): the walk reads each entry's own file type and skips symlinks; a test lays out a parent link and an alias to a second document and asserts each document is reported once (red on the unfixed binary: the same document reported under every loop spelling). Commit `15f367e` (bot, gates check passed, 12 commits scanned). Whole gate re-run at `15f367e`, logs under `coordinator/scratch/gate2/`: all six steps exit 0; 28 lanes, 195 tests passed, 0 failed; `ok contracts/code-editor/v1alpha1/contract.yaml`, `ok contracts/fs/v1alpha1/contract.yaml`; free disk 48 G |
+| 2026-10-20 07:05Z | coordinator fix on the integration branch (a shared file no implementor held): the walk reads each entry's own file type and skips symlinks; a test lays out a parent link and an alias to a second document and asserts each document is reported once (red on the unfixed binary: the same document reported under every loop spelling). Commit `15f367e` (bot, gates check passed, 12 commits scanned); not in the approved commit list, reported to `adr-changes` as a deviation and accepted after the fact under exception 5 as part of the wave's integration (a shared-file fix found only on the merged tree). Whole gate re-run at `15f367e`, logs under `coordinator/scratch/gate2/`: all six steps exit 0; 28 lanes, 195 tests passed, 0 failed; `ok contracts/code-editor/v1alpha1/contract.yaml`, `ok contracts/fs/v1alpha1/contract.yaml`; free disk 48 G |
 
 ## Closing
 
@@ -185,8 +185,25 @@ No step skipped itself; every step printed what its exit status says.
 | `2032e2d` | merge of unit 3 (`Cargo.lock` auto-merged) |
 | `4779bc4` | unit 2, `impl/toolset-fs` |
 | `0b45907` | merge of unit 2 (`Cargo.lock` regenerated, D5) |
-| `15f367e` | fix: the document walk never follows a symlink (coordinator, on the integration branch) |
-| closing | the closing store commit: evidence, moves, scopes, README, CHANGELOG, design, this page |
+| `15f367e` | fix: the document walk never follows a symlink (coordinator, on the integration branch; accepted after the fact) |
+| `eee7dfd` | the closing store commit: evidence, moves, scopes, README, CHANGELOG, design, this page |
+| `c3a467c` | merge of `wave/t1` into `main`, made locally as the bot and pushed: the ruleset on `main` requires the bot as author and committer of every commit, which a GitHub-made merge of pull request #1 could not satisfy (`gh pr merge` refused: "the base branch policy prohibits the merge"); CI on the pull request was green before (Security and privacy pass, task check pass 58 s) |
+
+### After the wave: the release
+
+The release `0.1.0` is a separate step (AGENTS.md § Releases), asked for in the proposal and approved
+with it: a `release: tools 0.1.0` commit on `release/0.1.0` (version, `Cargo.lock`, the changelog
+date, this section), the gate, a pull request for CI, the merge into `main` as the bot, the annotated
+tag `0.1.0` on that merge commit by the bot, and the GitHub release.
+
+### Worktrees
+
+The four unit trees were finished with `worktree finish --discard-cache --archive` (688, 667, 617 and
+501 MiB of `target/` discarded) and removed with `worktree gc --apply` by id, after their commits
+were on `wave/t1` and pushed. The integration tree `wave-t1` carries the release branch and is
+finished after the tag. The wave root `$HOME/.cache/tools-wave-t1/` (briefs, correction rounds,
+every agent's logs, the harness snapshot, the two declined profile patches) is left for the operator
+to read and remove; nothing under it is needed by the repository.
 
 ### What each unit cost (sub-agent tokens are each agent's cumulative total; tool uses and minutes are summed over its turns)
 
