@@ -11,16 +11,22 @@ publish.workspace = true
 [lib]
 name = "tool_toolchain"
 
+[features]
+mutants = []
+
 [lints]
 workspace = true
 
 [dependencies]
 b10x-tool-contract = { path = "../tool-contract" }
+b10x-tool-process = { path = "../tool-process" }
 regex = "1.13"
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true }
 sha2 = { workspace = true }
 
 [dev-dependencies]
+b10x-tool-toolchain = { path = ".", features = ["mutants"] }
 tempfile = { workspace = true }

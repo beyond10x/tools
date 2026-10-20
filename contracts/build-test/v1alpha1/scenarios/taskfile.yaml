@@ -1,0 +1,92 @@
+format: tool-conformance/1
+toolset: build-test
+version: v1alpha1
+scenarios:
+  - name: taskfile-run-runs-the-named-task
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/taskfile}
+    call:
+      operation: build-test.taskfile_run
+      input: {task: hello}
+    expect:
+      outcome: ok
+      output:
+        argv: [task, --taskfile, Taskfile.yml, --disable-fuzzy, hello]
+        exit: 0
+        stdout: "hello from the taskfile fixture\n"
+        truncated: false
+        omitted_bytes: 0
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        Taskfile.yml: unchanged
+  - name: taskfile-run-passes-its-arguments-after-the-separator
+    holds: [output]
+    fixture: {dir: fixtures/taskfile}
+    call:
+      operation: build-test.taskfile_run
+      input: {task: echo-args, args: [one, two]}
+    expect:
+      outcome: ok
+      output:
+        argv: [task, --taskfile, Taskfile.yml, --disable-fuzzy, echo-args, --, one, two]
+        exit: 0
+        stdout: "one two\n"
+  - name: arguments-after-the-separator-may-begin-with-a-dash
+    holds: [output]
+    fixture: {dir: fixtures/taskfile}
+    call:
+      operation: build-test.taskfile_run
+      input: {task: echo-args, args: ["-x", "--y"]}
+    expect:
+      outcome: ok
+      output:
+        argv: [task, --taskfile, Taskfile.yml, --disable-fuzzy, echo-args, "--", "-x", "--y"]
+        exit: 0
+        stdout: "-x --y\n"
+  - name: a-task-named-like-an-option-is-refused
+    holds: [effects]
+    fixture: {dir: fixtures/taskfile}
+    call:
+      operation: build-test.taskfile_run
+      input: {task: "--dry"}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`task` is `--dry`, which begins with `-` and would reach `taskfile_run`'s program as an option"
+  - name: a-task-the-taskfile-does-not-declare-is-refused
+    holds: [output]
+    fixture: {dir: fixtures/taskfile}
+    call:
+      operation: build-test.taskfile_run
+      input: {task: absent}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`task` is not valid for `taskfile_run`"
+  - name: a-run-gets-only-the-time-its-caller-has-left
+    holds: [bounds]
+    fixture: {dir: fixtures/taskfile}
+    call:
+      operation: build-test.taskfile_run
+      input: {task: slow}
+    expect:
+      outcome: ok
+      output:
+        exit: {$absent: true}
+        stdout: ""
+        timed_out: true
+  - name: a-run-past-the-output-bound-is-cut-and-names-what-it-dropped
+    holds: [bounds, output]
+    fixture: {dir: fixtures/taskfile}
+    call:
+      operation: build-test.taskfile_run
+      input: {task: loud}
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: {$contains: "\n… 4464 bytes omitted here …\n"}
+        truncated: true
+        omitted_bytes: 4464
+        timed_out: false

@@ -1,0 +1,38 @@
+format: tool-conformance/1
+toolset: build-test
+version: v1alpha1
+scenarios:
+  - name: adversary-a-package-spelled-as-a-flag-is-refused
+    holds: [effects]
+    fixture: {dir: fixtures/go}
+    call:
+      operation: build-test.go_build
+      input: {package: "-n"}
+    expect:
+      error: build-test.Refused
+      files:
+        main.go: unchanged
+  - name: adversary-a-check-path-spelled-as-a-flag-is-refused-and-writes-nothing
+    holds: [effects]
+    fixture:
+      dir: fixtures/go
+      files:
+        main.go: |
+          package main
+
+          import "fmt"
+
+          func greeting() string {
+          return "hello from the go fixture"
+          }
+
+          func main() {
+              fmt.Println(greeting())
+          }
+    call:
+      operation: build-test.go_fmt_check
+      input: {paths: [-w, main.go]}
+    expect:
+      error: build-test.Refused
+      files:
+        main.go: unchanged

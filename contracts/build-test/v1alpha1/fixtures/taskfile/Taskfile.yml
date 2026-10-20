@@ -1,0 +1,19 @@
+version: '3'
+
+tasks:
+  hello:
+    cmds:
+      - echo hello from the taskfile fixture
+  echo-args:
+    cmds:
+      - echo {{.CLI_ARGS}}
+  slow:
+    cmds:
+      - sleep 5
+      - echo finished
+  loud:
+    cmds:
+      - yes a | head -c 70000
+  "--dry":
+    cmds:
+      - echo a task named like an option

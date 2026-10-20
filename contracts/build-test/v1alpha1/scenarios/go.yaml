@@ -1,0 +1,270 @@
+format: tool-conformance/1
+toolset: build-test
+version: v1alpha1
+scenarios:
+  - name: go-build-compiles-the-module
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/go}
+    call:
+      operation: build-test.go_build
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [go, build, ./...]
+        exit: 0
+        truncated: false
+        omitted_bytes: 0
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        go.mod: unchanged
+        main.go: unchanged
+  - name: go-test-runs-the-tests
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/go}
+    call:
+      operation: build-test.go_test
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [go, test, ./...]
+        exit: 0
+        stdout: {$contains: "ok  \texample.com/fixture"}
+        timed_out: false
+        timeout_ms: 600000
+  - name: a-failing-go-test-is-a-result-and-not-an-error
+    holds: [output]
+    fixture:
+      dir: fixtures/go
+      files:
+        main_test.go: |
+          package main
+
+          import "testing"
+
+          func TestGreeting(t *testing.T) {
+          	if got := greeting(); got != "a different greeting" {
+          		t.Fatalf("greeting() = %q", got)
+          	}
+          }
+    call:
+      operation: build-test.go_test
+      input: {package: .}
+    expect:
+      outcome: ok
+      output:
+        argv: [go, test, .]
+        exit: 1
+        stdout: {$contains: "--- FAIL: TestGreeting"}
+        timed_out: false
+  - name: go-vet-checks-the-module
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/go}
+    call:
+      operation: build-test.go_vet
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [go, vet, ./...]
+        exit: 0
+        timed_out: false
+        timeout_ms: 600000
+  - name: go-fmt-check-passes-a-formatted-file
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/go}
+    call:
+      operation: build-test.go_fmt_check
+      input: {paths: [main.go]}
+    expect:
+      outcome: ok
+      output:
+        argv: [gofmt, -l, main.go]
+        exit: 0
+        stdout: ""
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        main.go: unchanged
+  - name: go-fmt-check-refuses-a-path-that-leaves-the-workspace
+    holds: [effects]
+    fixture: {dir: fixtures/go}
+    call:
+      operation: build-test.go_fmt_check
+      input: {paths: [main.go, ../outside.go]}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`../outside.go` is not a contained relative path"
+  - name: a-check-path-that-leaves-through-a-link-is-refused-before-gofmt-starts
+    holds: [effects]
+    fixture: {dir: fixtures/go-links}
+    call:
+      operation: build-test.go_fmt_check
+      input: {paths: [main.go, up/outside.go]}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`up/outside.go` lands outside the workspace; nothing was started"
+  - name: a-written-path-that-lands-outside-the-workspace-is-refused-before-gofmt-starts
+    holds: [subjects, effects]
+    fixture: {dir: fixtures/go-links}
+    call:
+      operation: build-test.go_fmt
+      input: {paths: [main.go, up/escape.go]}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`up/escape.go` lands outside the workspace; nothing was started"
+      files:
+        main.go: unchanged
+  - name: an-unformatted-go-file-fails-the-go-formatting-check
+    holds: [output, effects]
+    fixture:
+      dir: fixtures/go
+      files:
+        main.go: |
+          package main
+
+          import "fmt"
+
+          func greeting() string {
+          return "hello from the go fixture"
+          }
+
+          func main() {
+              fmt.Println(greeting())
+          }
+    call:
+      operation: build-test.go_fmt_check
+      input: {paths: [main.go, main_test.go]}
+    expect:
+      error: build-test.CheckFailed
+      output:
+        stdout: "main.go\n"
+      files:
+        main.go: unchanged
+  - name: go-fmt-formats-only-the-named-file
+    holds: [effects, idempotency, determinism, bounds, output, subjects]
+    fixture:
+      dir: fixtures/go
+      files:
+        main.go: |
+          package main
+
+          import "fmt"
+
+          func greeting() string {
+          return "hello from the go fixture"
+          }
+
+          func main() {
+              fmt.Println(greeting())
+          }
+        other.go: |
+          package main
+
+          func other() string {
+          return "left alone"
+          }
+    call:
+      operation: build-test.go_fmt
+      input: {paths: [main.go]}
+    expect:
+      outcome: ok
+      output:
+        argv: [gofmt, -w, main.go]
+        exit: 0
+        truncated: false
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        main.go:
+          equals: |
+            package main
+
+            import "fmt"
+
+            func greeting() string {
+            	return "hello from the go fixture"
+            }
+
+            func main() {
+            	fmt.Println(greeting())
+            }
+        other.go: unchanged
+  - name: a-path-the-write-scope-refuses-is-refused-before-gofmt-starts
+    holds: [subjects, effects]
+    fixture:
+      dir: fixtures/go
+      files:
+        protected/kept.go: |
+          package protected
+
+          func kept() string {
+          return "kept"
+          }
+    call:
+      operation: build-test.go_fmt
+      input: {paths: [main.go, protected/kept.go]}
+    expect:
+      error: build-test.Refused
+      output:
+        message: "`protected/kept.go` is outside what this run may change"
+      files:
+        protected/kept.go: unchanged
+  - name: go-bench-runs-the-benchmarks
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/go}
+    call:
+      operation: build-test.go_bench
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [go, test, ./..., "-run=^$", -bench=.]
+        exit: 0
+        stdout: {$contains: BenchmarkGreeting}
+        timed_out: false
+        timeout_ms: 600000
+  - name: go-run-runs-the-package
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/go}
+    call:
+      operation: build-test.go_run
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [go, run, .]
+        exit: 0
+        stdout: "hello from the go fixture\n"
+        timed_out: false
+        timeout_ms: 600000
+  - name: go-fetch-resolves-a-module-without-dependencies-offline
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/go}
+    call:
+      operation: build-test.go_fetch
+      input: {}
+    expect:
+      outcome: ok
+      output:
+        argv: [go, mod, download]
+        exit: 0
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        go.mod: unchanged
+  - name: an-operation-of-a-provider-the-workspace-does-not-carry-is-refused
+    holds: [effects]
+    fixture: {dir: fixtures/cargo}
+    call:
+      operation: build-test.go_build
+      input: {}
+    expect:
+      error: build-test.Refused
+      output:
+        message: {$contains: build-test.go_build}

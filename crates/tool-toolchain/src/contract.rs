@@ -1,28 +1,32 @@
 //! The `build-test` operations a resolved provider derives under the `tool-contract/1` profile.
 //!
-//! A tool's YAML already declares what the profile asks for: the programs it starts
+//! A tool's YAML already declares most of what the profile asks for: the programs it starts
 //! (`requires.binaries`), the environment it runs under (`requires.env`), the installation roots
-//! it mounts (`requires.settings`), whether it writes the workspace (`effects`), which
-//! parameters name the paths it writes (`subjects`), whether its plan can start several
-//! processes (`output`) and whether it is a check that reads standard output as failure
-//! (`outcomes`). The operations are resolved per workspace, like the tools they come from; the
-//! static `build-test` contract document with its conformance suite is a later story.
+//! it mounts (`requires.settings`), which parameters name the paths it writes (`subjects`),
+//! whether its plan can start several processes (`output`) and whether it is a check that reads
+//! standard output as failure (`outcomes`). The effects, consequences, risk and placement are
+//! the executor's, which confines the program to nothing but its environment, bounds and
+//! written paths, so they are the same for every tool. The operations are resolved per
+//! workspace, like the tools they come from. What
+//! the five built-in providers derive is frozen in `contracts/build-test/v1alpha1/contract.yaml`
+//! ([`crate::document`]); a test holds the two equal, operation for operation, apart from the
+//! values an enum parameter takes, which only a workspace supplies.
 //!
 //! A published name is the handle a harness gets, and the derivation that produces it is not
 //! one-to-one with tool names ([`operation_name`]). A harness routes a published operation
 //! through [`ResolvedProvider::plan_operation`], or finds its tool with
 //! [`ResolvedProvider::tool_for`]. [`ResolvedProvider::plan`] matches a tool's own name first
 //! and falls back to `tool_for` when no tool carries that exact name; the fallback is one of the
-//! three documented changes to the source moved from harness, so the published name plans the
-//! right tool by that route too.
+//! documented changes to the source moved from harness, so the published name plans the right
+//! tool by that route too.
 
 use std::collections::BTreeMap;
 
 use serde_json::Value;
 use tool_contract::{
-    Bound, Bounds, Contract, Determinism, Effect, ErrorDecl, Field, Idempotency, Operation,
-    Outcome, OutputMarks, Placement, Profile, Requires, Risk, Subject, SubjectKind, TypeDecl,
-    TypeKind,
+    Bound, Bounds, Consequence, Contract, Determinism, Effect, ErrorDecl, Field, Idempotency,
+    Operation, Outcome, OutputMarks, Placement, Profile, Requires, Risk, Subject, SubjectKind,
+    TypeDecl, TypeKind,
 };
 
 use crate::{CommandPlan, ParameterKind, ParameterSpec, ResolvedProvider, ResolvedTool};
@@ -93,8 +97,12 @@ pub fn refused() -> ErrorDecl {
     ErrorDecl {
         name: REFUSED.to_owned(),
         summary: Some(
-            "The call was not started: an argument was missing, mistyped, outside its enum or \
-             escaping the workspace, or the program is not one the sandbox admits."
+            "The call was not started: an argument was missing, mistyped, outside its enum, \
+             escaping the workspace or spelled as an option, a path it writes lands outside the \
+             workspace or outside the caller's write scope, no provider the workspace resolves \
+             declares the operation, the call's deadline had passed, or the program is not one \
+             the sandbox admits or could not be started; or a started program could not be \
+             reported on."
                 .to_owned(),
         ),
         fields: vec![Field {
@@ -217,7 +225,10 @@ impl ResolvedTool {
             },
             Outcome {
                 name: "refused".to_owned(),
-                summary: Some("Nothing was started.".to_owned()),
+                summary: Some(
+                    "Nothing was started, or a started program could not be reported on."
+                        .to_owned(),
+                ),
                 error: Some(REFUSED.to_owned()),
             },
         ];
@@ -258,7 +269,7 @@ impl ResolvedTool {
     /// Whether the plan can start more than one process: a command list longer than one, or a
     /// command that runs once per item of a list parameter. The harness this crate came from
     /// answers one object for one process and an array for several.
-    fn several_processes(&self) -> bool {
+    pub(crate) fn several_processes(&self) -> bool {
         self.commands.len() > 1
             || self
                 .commands
@@ -266,19 +277,30 @@ impl ResolvedTool {
                 .any(|command| command.for_each.is_some())
     }
 
-    /// The profile: `process`, plus `write` when the tool declares `workspace-writes`; the
-    /// sandbox's programs, environment names and roots under `requires`; one `path` subject per
-    /// parameter named in `writes`; `confined`, because every valid provider declares the
-    /// program each command starts and the harness confines the run to them.
+    /// The profile of what the executor ([`crate::executor`]) does with the tool: it starts the
+    /// declared program on the caller's own machine, with the caller's `HOME` and caches, and
+    /// confines nothing but the environment (cleared to an allow-list), the time, the output and
+    /// the paths a call names as written. So every operation is `local` and declares every
+    /// effect and consequence such a runner allows, at `high` risk, as `process.run` does,
+    /// whether or not the tool declares `workspace-writes` (coordinator decision D7, wave w3).
+    /// The sandbox's programs, environment names and roots stay under `requires`, and each
+    /// parameter named in `writes` is a `path` subject.
     fn profile(&self, provider: &ResolvedProvider, name: &str) -> Profile {
-        let mut effects = vec![Effect::Process];
-        if self.workspace_writes {
-            effects.push(Effect::Write);
-        }
         Profile {
-            effects,
-            consequences: Vec::new(),
-            risk: Risk::Medium,
+            effects: vec![
+                Effect::Process,
+                Effect::Write,
+                Effect::Network,
+                Effect::Secret,
+            ],
+            consequences: vec![
+                Consequence::Money,
+                Consequence::Delete,
+                Consequence::SendExternal,
+                Consequence::Irreversible,
+                Consequence::SensitiveData,
+            ],
+            risk: Risk::High,
             idempotency: Idempotency::NonIdempotent,
             preconditions: Vec::new(),
             determinism: Determinism::Nondeterministic,
@@ -313,7 +335,7 @@ impl ResolvedTool {
                     pattern: Some(format!("{name}({{{field}}})")),
                 })
                 .collect(),
-            placement: Placement::Confined,
+            placement: Placement::Local,
             capability: CAPABILITY.to_owned(),
             output: Some(OutputMarks {
                 untrusted: true,
@@ -324,8 +346,9 @@ impl ResolvedTool {
 
     /// One input field for a parameter: its kind's type, `Optional` unless required. The
     /// description carries what `Field` has no slot for, `;`-separated: the parameter's own
-    /// description, an enum's values as resolved for this workspace, its default, and the item
-    /// bounds of a list.
+    /// description, the containment a path kind is held to (so a provider that turns a path
+    /// into a plain string derives a different operation), an enum's values as resolved for
+    /// this workspace, its default, and the item bounds of a list.
     fn field(&self, name: &str, spec: &ParameterSpec) -> Field {
         let base = match spec.kind {
             ParameterKind::String | ParameterKind::WorkspacePath | ParameterKind::Enum => "String",
@@ -340,6 +363,17 @@ impl ResolvedTool {
         let mut parts: Vec<String> = Vec::new();
         if let Some(text) = &spec.description {
             parts.push(text.clone());
+        }
+        match spec.kind {
+            ParameterKind::WorkspacePath => parts.push(
+                "a path relative to the workspace root, refused when it leaves the workspace"
+                    .to_owned(),
+            ),
+            ParameterKind::WorkspacePathList => parts.push(
+                "paths relative to the workspace root, each refused when it leaves the workspace"
+                    .to_owned(),
+            ),
+            _ => {}
         }
         if spec.kind == ParameterKind::Enum
             && let Some(items) = spec
@@ -679,20 +713,88 @@ mod tests {
         );
     }
 
+    /// Coordinator decision D7 (wave w3, correction round 1): the executor runs the program on
+    /// the caller's machine, confined to nothing but the cleared environment, the bounds and the
+    /// written-path check, so every operation declares what such a runner allows, as
+    /// `process.run` does, whatever the tool says it writes.
     #[test]
-    fn a_tool_that_writes_the_workspace_derives_process_and_write_at_medium_risk() {
+    fn every_operation_declares_every_effect_and_consequence_an_unconfined_runner_allows() {
         let (_dir, providers) = providers();
-        let op = operation(&providers, "rust_check");
-        assert_eq!(op.profile.effects, [Effect::Process, Effect::Write]);
-        assert_eq!(op.profile.risk, Risk::Medium);
+        let derived = contract(&providers);
+        assert_eq!(derived.operations.len(), 20);
+        for op in &derived.operations {
+            assert_eq!(
+                op.profile.effects,
+                [
+                    Effect::Process,
+                    Effect::Write,
+                    Effect::Network,
+                    Effect::Secret
+                ],
+                "{}",
+                op.name
+            );
+            assert_eq!(
+                op.profile.consequences,
+                [
+                    Consequence::Money,
+                    Consequence::Delete,
+                    Consequence::SendExternal,
+                    Consequence::Irreversible,
+                    Consequence::SensitiveData,
+                ],
+                "{}",
+                op.name
+            );
+            assert_eq!(op.profile.risk, Risk::High, "{}", op.name);
+            assert_eq!(op.profile.placement, Placement::Local, "{}", op.name);
+        }
     }
 
+    /// Coordinator decision on F6 (wave w3, correction round 1): a path parameter's containment
+    /// is part of what the operation guarantees, so its field says so and a provider that turns
+    /// it into a plain string derives a different operation.
     #[test]
-    fn a_tool_that_leaves_the_workspace_alone_derives_process_alone() {
-        let (_dir, providers) = providers();
-        let op = operation(&providers, "rust_fmt_check");
-        assert_eq!(op.profile.effects, [Effect::Process]);
-        assert_eq!(op.profile.risk, Risk::Medium);
+    fn a_path_parameter_names_its_containment_and_a_string_one_does_not() {
+        let (_dir, root) = fixtures();
+        let mut registry = Registry::default();
+        registry
+            .add_document(
+                "version: 1\n\
+                 toolchains:\n\
+                 \x20 - name: probe\n\
+                 \x20   description: One parameter of each string kind.\n\
+                 \x20   sandbox:\n\
+                 \x20     programs: [sh]\n\
+                 \x20   tools:\n\
+                 \x20     - name: probe_kinds\n\
+                 \x20       description: Takes every kind.\n\
+                 \x20       parameters:\n\
+                 \x20         file: { kind: workspace-path }\n\
+                 \x20         files: { kind: workspace-path-list, max-items: 4 }\n\
+                 \x20         name: { kind: string }\n\
+                 \x20         names: { kind: string-list }\n\
+                 \x20       commands:\n\
+                 \x20         - argv: [sh]\n",
+                "probe.yaml",
+            )
+            .expect("a document the registry accepts");
+        let declared = registry.providers.get("probe").expect("probe");
+        let provider = resolve_offline(&root, declared);
+        let op = &provider.operations()[0];
+        assert_eq!(
+            described(&op.input, "file").as_deref(),
+            Some("a path relative to the workspace root, refused when it leaves the workspace")
+        );
+        assert_eq!(
+            described(&op.input, "files").as_deref(),
+            Some(
+                "paths relative to the workspace root, each refused when it leaves the \
+                 workspace; up to 4 items"
+            )
+        );
+        assert_eq!(described(&op.input, "name"), None);
+        assert_eq!(described(&op.input, "names"), None);
     }
 
     #[test]
@@ -755,7 +857,10 @@ mod tests {
         let rust_fmt = operation(&providers, "rust_fmt");
         assert_eq!(
             described(&rust_fmt.input, "paths").as_deref(),
-            Some("1 to 128 items")
+            Some(
+                "paths relative to the workspace root, each refused when it leaves the \
+                 workspace; 1 to 128 items"
+            )
         );
         let taskfile_run = operation(&providers, "taskfile_run");
         assert_eq!(
@@ -851,7 +956,7 @@ mod tests {
     }
 
     #[test]
-    fn requires_and_placement_come_from_the_providers_sandbox() {
+    fn requires_comes_from_the_providers_sandbox_and_placement_is_local() {
         let (_dir, providers) = providers();
         let rust = operation(&providers, "rust_test");
         assert_eq!(
@@ -870,11 +975,11 @@ mod tests {
         );
         assert_eq!(rust.profile.requires.settings, ["rustup"]);
         assert_eq!(rust.profile.requires.secrets, Vec::<String>::new());
-        assert_eq!(rust.profile.placement, Placement::Confined);
+        assert_eq!(rust.profile.placement, Placement::Local);
         let npm = operation(&providers, "npm_run");
         assert_eq!(npm.profile.requires.binaries, ["npm"]);
         assert_eq!(npm.profile.requires.settings, Vec::<String>::new());
-        assert_eq!(npm.profile.placement, Placement::Confined);
+        assert_eq!(npm.profile.placement, Placement::Local);
     }
 
     #[test]
@@ -898,7 +1003,7 @@ mod tests {
         assert_eq!(op.profile.idempotency, Idempotency::NonIdempotent);
         assert_eq!(op.profile.determinism, Determinism::Nondeterministic);
         assert_eq!(op.profile.capability, "build.run");
-        assert_eq!(op.profile.consequences, Vec::<Consequence>::new());
+        assert_eq!(op.profile.consequences.len(), 5);
         let outcomes: Vec<(&str, Option<&str>)> = op
             .outcomes
             .iter()
@@ -1012,5 +1117,73 @@ mod tests {
             .expect_err("the same refusal");
         assert_eq!(refused, same);
         assert_eq!(rust.plan_operation("build-test.npm_run", &json!({})), None);
+    }
+
+    /// The input fields of `tool` whose parameter is an enum: their values are the workspace's
+    /// own, resolved per workspace, so the static document says where they come from instead of
+    /// listing them.
+    fn enum_parameters(tool: &crate::ResolvedTool) -> Vec<String> {
+        tool.parameters
+            .iter()
+            .filter(|(_, spec)| spec.kind == crate::ParameterKind::Enum)
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    fn without_descriptions(op: &Operation, fields: &[String]) -> Operation {
+        let mut op = op.clone();
+        for field in &mut op.input {
+            if fields.contains(&field.name) {
+                field.description = None;
+            }
+        }
+        op
+    }
+
+    #[test]
+    fn the_static_document_equals_what_the_builtins_derive_operation_for_operation() {
+        let (_dir, providers) = providers();
+        let derived = contract(&providers);
+        let yaml = serde_yaml_ng::to_string(&derived).expect("a contract serialises");
+        println!("the document the five built-in providers derive:\n{yaml}");
+        let document = crate::document();
+        assert_eq!(document.format, tool_contract::document::FORMAT);
+        assert_eq!(document.toolset, TOOLSET);
+        assert_eq!(document.version, VERSION);
+        assert_eq!(validate(document), Ok(()));
+        let names = |of: &tool_contract::Contract| -> Vec<String> {
+            of.operations.iter().map(|op| op.name.clone()).collect()
+        };
+        assert_eq!(names(document), names(&derived));
+        let mut compared = 0;
+        for provider in &providers {
+            for tool in &provider.tools {
+                let name = operation_name(&tool.name);
+                let fixed = document.operation(&name).expect("named above");
+                let resolved = derived.operation(&name).expect("named above");
+                let enums = enum_parameters(tool);
+                assert_eq!(
+                    without_descriptions(fixed, &enums),
+                    without_descriptions(resolved, &enums),
+                    "{name}"
+                );
+                for field in &enums {
+                    let fixed = described(&fixed.input, field).unwrap_or_default();
+                    assert!(
+                        fixed.contains("resolved per workspace"),
+                        "{name}.{field}: {fixed:?}"
+                    );
+                    let resolved = described(&resolved.input, field).unwrap_or_default();
+                    assert!(
+                        resolved.starts_with("one of: "),
+                        "{name}.{field}: {resolved:?}"
+                    );
+                }
+                compared += 1;
+            }
+        }
+        assert_eq!(compared, 20);
+        assert_eq!(document.errors, derived.errors);
+        assert_eq!(document.types, derived.types);
     }
 }

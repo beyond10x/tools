@@ -1,0 +1,22 @@
+format: tool-conformance/1
+toolset: build-test
+version: v1alpha1
+scenarios:
+  - name: yarn-run-runs-the-named-script
+    holds: [effects, idempotency, determinism, bounds, output]
+    fixture: {dir: fixtures/yarn}
+    call:
+      operation: build-test.yarn_run
+      input: {script: hello}
+    expect:
+      outcome: ok
+      output:
+        argv: [yarn, run, hello]
+        exit: 0
+        stdout: {$contains: "hello from the yarn fixture\n"}
+        truncated: false
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        package.json: unchanged
+        yarn.lock: unchanged
