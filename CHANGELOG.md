@@ -6,6 +6,11 @@ the bare version.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-20
+
+Wave w3: the build-test toolset with its executor on the process runner, and the search toolset.
+harness pins this tag to move the rest of its tools here (atlas ADR 0097 point 3).
+
 ### Added
 
 - `build-test` v1alpha1: a static contract for the 20 operations the five built-in toolchain

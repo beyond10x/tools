@@ -151,3 +151,21 @@ Review-results recorded: 4.
   enforces.
 - `story:build-test-applies-provider-environment` (draft): the go summaries say network and
   checksum lookup are disabled while the provider's environment is not applied.
+
+### After the wave
+
+| sha | what |
+|---|---|
+| `e73a306` | the closing store commit |
+| `711caac` | merge of `wave/w3` into `main`, made locally as the bot and pushed; CI on pull request 5 green before it (Security and privacy pass, task check pass 2m29s); GitHub shows the pull request merged |
+
+The unit trees (703 and 1,211 MiB of `target/` discarded) and the integration tree `wave-w3`
+(1,589 MiB) were finished with `worktree finish --discard-cache --archive` and removed by id; the
+merged branches were deleted with `git branch -d`. The wave root `$HOME/.cache/tools-wave-w3/` is
+left for the operator to read and remove.
+
+Release `0.3.0` was approved after the wave closed by `b10x-chef-orchestrator` under the owner's
+standing grant, because harness pins `build-test` and `search` to finish atlas ADR 0097 point 3:
+a `release: tools 0.3.0` commit on `release/0.3.0` (version, `Cargo.lock`, the changelog date, this
+section), the gate, a pull request for CI, the merge into `main` as the bot, the annotated tag
+`0.3.0` on that merge commit by the bot, and the GitHub release. No registry publishing.
