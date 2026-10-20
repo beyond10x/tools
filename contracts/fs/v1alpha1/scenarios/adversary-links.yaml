@@ -1,0 +1,113 @@
+format: tool-conformance/1
+toolset: fs
+version: v1alpha1
+scenarios:
+  - name: adversary-stat-of-a-link-that-leads-nowhere-is-not-found
+    holds: [output, subjects]
+    fixture:
+      dir: fixtures/adversary-links
+    call: {operation: fs.stat, input: {path: nowhere}}
+    expect:
+      error: fs.NotFound
+      output: {path: nowhere}
+      files: {nowhere: unchanged}
+  - name: adversary-a-read-of-a-link-that-leads-nowhere-is-not-found
+    holds: [output, subjects]
+    fixture:
+      dir: fixtures/adversary-links
+    call: {operation: fs.read, input: {path: nowhere}}
+    expect:
+      error: fs.NotFound
+      output: {path: nowhere}
+      files: {nowhere: unchanged}
+  - name: adversary-a-link-that-leads-nowhere-is-listed-as-a-link
+    holds: [output]
+    fixture:
+      dir: fixtures/adversary-links
+    call: {operation: fs.list}
+    expect:
+      outcome: ok
+      output:
+        path: ""
+        entries:
+          - {name: alias, kind: symlink, bytes: {$absent: true}}
+          - {name: nowhere, kind: symlink, bytes: {$absent: true}}
+          - {name: real, kind: directory, bytes: {$absent: true}}
+        truncated: false
+  - name: adversary-a-listing-through-a-link-to-a-directory-inside-is-under-the-targets-name
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/adversary-links
+    call: {operation: fs.list, input: {path: alias}}
+    expect:
+      outcome: ok
+      output:
+        path: real
+        entries:
+          - {name: keep.txt, kind: file, bytes: 5}
+        truncated: false
+      files: {alias: unchanged, real/keep.txt: unchanged}
+  - name: adversary-stat-through-a-link-to-a-directory-inside-is-under-the-targets-path
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/adversary-links
+    call: {operation: fs.stat, input: {path: alias/keep.txt}}
+    expect:
+      outcome: ok
+      output:
+        path: real/keep.txt
+        kind: file
+        bytes: 5
+        sha256: {$sha256_of: real/keep.txt}
+  - name: adversary-stat-of-a-link-to-a-directory-inside-is-the-link-itself
+    holds: [output]
+    fixture:
+      dir: fixtures/adversary-links
+    call: {operation: fs.stat, input: {path: alias}}
+    expect:
+      outcome: ok
+      output:
+        path: alias
+        kind: symlink
+        bytes: {$absent: true}
+        sha256: {$absent: true}
+  - name: adversary-a-glob-answers-a-link-to-a-directory-inside-under-the-links-own-path
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/adversary-links
+    call: {operation: fs.glob, input: {glob: "*"}}
+    expect:
+      outcome: ok
+      output:
+        paths: [alias/keep.txt, real/keep.txt]
+        truncated: false
+        depth_bound_reached: false
+      files: {alias: unchanged, nowhere: unchanged, real/keep.txt: unchanged}
+  - name: adversary-a-read-through-a-chain-of-links-to-a-file-is-under-the-targets-name
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/adversary-chain
+    call: {operation: fs.read, input: {path: hop}}
+    expect:
+      outcome: ok
+      output:
+        path: real/keep.txt
+        text: "     1\tkeep\n"
+        sha256: {$sha256_of: real/keep.txt}
+      files: {hop: unchanged, filelink: unchanged, real/keep.txt: unchanged}
+  - name: adversary-a-path-through-a-chain-of-links-to-a-file-does-not-exist-and-is-not-found
+    holds: [output, subjects]
+    fixture:
+      dir: fixtures/adversary-chain
+    call: {operation: fs.read, input: {path: hop/x}}
+    expect:
+      error: fs.NotFound
+      output: {path: hop/x}
+  - name: adversary-a-listing-through-a-chain-of-links-to-a-file-does-not-exist-and-is-not-found
+    holds: [output, subjects]
+    fixture:
+      dir: fixtures/adversary-chain
+    call: {operation: fs.list, input: {path: hop/x}}
+    expect:
+      error: fs.NotFound
+      output: {path: hop/x}

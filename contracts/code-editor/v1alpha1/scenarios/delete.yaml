@@ -1,0 +1,82 @@
+format: tool-conformance/1
+toolset: code-editor
+version: v1alpha1
+scenarios:
+  - name: delete-a-file-is-deleted
+    holds: [effects, output, bounds, determinism, subjects]
+    fixture:
+      files: {a.txt: "x\n", keep.txt: "keep\n"}
+    call: {operation: code.delete, input: {path: a.txt}}
+    expect:
+      outcome: ok
+      output: {path: a.txt}
+      files:
+        a.txt: absent
+        keep.txt: unchanged
+  - name: delete-a-stale-digest-is-refused-and-the-file-stays
+    holds: [preconditions]
+    fixture:
+      files: {a.txt: "x\n"}
+    call:
+      operation: code.delete
+      input:
+        path: a.txt
+        expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    expect:
+      error: code.PreconditionFailed
+      output:
+        expected: "0000000000000000000000000000000000000000000000000000000000000000"
+        actual: {$sha256_of: a.txt}
+      files:
+        a.txt: unchanged
+  - name: delete-a-matching-digest-lets-the-delete-through
+    holds: [preconditions]
+    fixture:
+      files: {a.txt: "x\n"}
+    call:
+      operation: code.delete
+      input:
+        path: a.txt
+        expected_sha256: 73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac
+    expect:
+      outcome: ok
+      files:
+        a.txt: absent
+  - name: delete-deleting-a-file-that-is-already-gone-is-not-found-and-removes-nothing-else
+    holds: [idempotency, subjects]
+    fixture:
+      files: {keep.txt: "keep\n"}
+    call: {operation: code.delete, input: {path: a.txt}}
+    expect:
+      error: code.NotFound
+      output: {path: a.txt}
+      files:
+        a.txt: absent
+        keep.txt: unchanged
+  - name: delete-a-directory-is-not-deleted
+    holds: [subjects]
+    fixture:
+      files: {dir/keep: "keep\n"}
+    call: {operation: code.delete, input: {path: dir}}
+    expect:
+      error: code.NotAFile
+      output: {path: dir}
+      files:
+        dir/keep: unchanged
+  - name: delete-a-link-is-not-deleted-and-neither-is-its-target
+    holds: [subjects]
+    fixture:
+      dir: fixtures/link-inside
+    call: {operation: code.delete, input: {path: link}}
+    expect:
+      error: code.IsSymlink
+      output: {path: link}
+      files:
+        link: unchanged
+        real.txt: unchanged
+  - name: delete-a-path-that-climbs-out-is-refused
+    holds: [subjects]
+    call: {operation: code.delete, input: {path: ../escaped-by-delete.txt}}
+    expect:
+      error: code.OutsideWorkspace
+      output: {path: ../escaped-by-delete.txt}

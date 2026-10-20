@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T02:36:46Z",
+  "actor": "human:timo",
+  "artifact": "story:tool-contract-profile",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "tool-contract validate on the four defect documents and the valid fixture, in tree impl-tool-contract-profile before merge",
+    "reference": "docs/plans/wave-t1.md stage log 05:05; the run log is in the wave root coordinator/scratch/verify-unit1-treatment.log (4 defects exit 1 naming operation and property, valid fixture exit 0; base has no crate)"
+  }
+}

@@ -6,6 +6,11 @@ tasks:
       - task: check
 
   check:
-    desc: Planning store validation; contract validation and crate tests join as they land.
+    desc: Planning store validation, workspace tests, formatting, clippy, the 1.98 msrv check and contract validation.
     cmds:
       - aep plan artifact validate
+      - cargo test --workspace --locked
+      - cargo fmt --all --check
+      - cargo clippy --workspace --all-targets --locked -- -D warnings
+      - cargo +1.98.0 check --workspace --locked
+      - cargo run --locked -p b10x-tool-contract -- validate contracts/

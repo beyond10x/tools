@@ -1,0 +1,107 @@
+format: tool-conformance/1
+toolset: code-editor
+version: v1alpha1
+scenarios:
+  - name: move-a-file-is-moved-and-the-source-is-gone
+    holds: [effects, output, bounds, determinism, subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: code.move, input: {from: a.txt, to: b.txt}}
+    expect:
+      outcome: ok
+      output: {from: a.txt, to: b.txt}
+      files:
+        a.txt: absent
+        b.txt: {equals: "x\n"}
+  - name: move-a-move-into-an-existing-directory-keeps-the-content
+    holds: [effects, subjects]
+    fixture:
+      files: {a.txt: "x\n", dir/keep: "keep\n"}
+    call: {operation: code.move, input: {from: a.txt, to: dir/a.txt}}
+    expect:
+      outcome: ok
+      output: {from: a.txt, to: dir/a.txt}
+      files:
+        a.txt: absent
+        dir/a.txt: {sha256: 73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac}
+        dir/keep: unchanged
+  - name: move-a-move-onto-an-existing-file-is-refused-and-both-stay
+    holds: [effects, output]
+    fixture:
+      files: {a.txt: "x\n", b.txt: "y\n"}
+    call: {operation: code.move, input: {from: a.txt, to: b.txt}}
+    expect:
+      error: code.Exists
+      output: {path: b.txt}
+      files:
+        a.txt: unchanged
+        b.txt: unchanged
+  - name: move-a-missing-source-is-not-found
+    holds: [subjects]
+    call: {operation: code.move, input: {from: missing.txt, to: b.txt}}
+    expect:
+      error: code.NotFound
+      output: {path: missing.txt}
+      files:
+        b.txt: absent
+  - name: move-the-same-move-a-second-time-finds-no-source
+    holds: [idempotency]
+    fixture:
+      files: {b.txt: "x\n"}
+    call: {operation: code.move, input: {from: a.txt, to: b.txt}}
+    expect:
+      error: code.NotFound
+      output: {path: a.txt}
+      files:
+        b.txt: unchanged
+  - name: move-a-destination-that-climbs-out-is-refused
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: code.move, input: {from: a.txt, to: ../escaped-by-move.txt}}
+    expect:
+      error: code.OutsideWorkspace
+      output: {path: ../escaped-by-move.txt}
+      files:
+        a.txt: unchanged
+  - name: move-a-source-that-climbs-out-is-refused
+    holds: [subjects]
+    call: {operation: code.move, input: {from: ../anything.txt, to: b.txt}}
+    expect:
+      error: code.OutsideWorkspace
+      output: {path: ../anything.txt}
+      files:
+        b.txt: absent
+  - name: move-a-destination-under-a-missing-parent-is-refused
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: code.move, input: {from: a.txt, to: new/a.txt}}
+    expect:
+      error: code.ParentMissing
+      output: {path: new/a.txt}
+      files:
+        a.txt: unchanged
+        new: absent
+  - name: move-a-directory-is-not-moved
+    holds: [subjects]
+    fixture:
+      files: {dir/keep: "keep\n"}
+    call: {operation: code.move, input: {from: dir, to: other}}
+    expect:
+      error: code.NotAFile
+      output: {path: dir}
+      files:
+        dir/keep: unchanged
+        other: absent
+  - name: move-a-destination-spelled-as-a-directory-is-refused-and-nothing-moves
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: code.move, input: {from: a.txt, to: "new/"}}
+    expect:
+      error: code.NotAFile
+      output: {path: "new/"}
+      files:
+        a.txt: unchanged
+        new: absent

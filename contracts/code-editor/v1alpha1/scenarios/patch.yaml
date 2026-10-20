@@ -1,0 +1,185 @@
+format: tool-conformance/1
+toolset: code-editor
+version: v1alpha1
+scenarios:
+  - name: patch-two-disjoint-edits-apply-against-the-original-and-count-two
+    holds: [effects, output, bounds, determinism]
+    fixture:
+      files: {a.txt: "alpha\nbeta\ngamma\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: alpha, new: ALPHA}
+          - {old: gamma, new: GAMMA}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        bytes: 17
+        sha256: {$sha256_of: a.txt}
+        diff: {$contains: "-alpha\n+ALPHA\n"}
+        applied: 2
+      files:
+        a.txt: {equals: "ALPHA\nbeta\nGAMMA\n"}
+  - name: patch-an-edit-that-would-only-match-after-another-is-refused-against-the-original
+    holds: [effects]
+    fixture:
+      files: {a.txt: "a\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: a, new: b}
+          - {old: b, new: c}
+    expect:
+      error: code.NoMatch
+      output: {index: 1}
+      files:
+        a.txt: unchanged
+  - name: patch-overlapping-edits-are-refused-and-the-file-is-unchanged
+    holds: [effects, output]
+    fixture:
+      files: {a.txt: "abcd\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: abc, new: x}
+          - {old: bcd, new: y}
+    expect:
+      error: code.Overlap
+      output: {first: 0, second: 1}
+      files:
+        a.txt: unchanged
+  - name: patch-two-edits-of-the-same-text-are-refused-as-overlapping
+    holds: [effects]
+    fixture:
+      files: {a.txt: "alpha\nbeta\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: alpha, new: x}
+          - {old: alpha, new: y}
+    expect:
+      error: code.Overlap
+      output: {first: 0, second: 1}
+      files:
+        a.txt: unchanged
+  - name: patch-one-ambiguous-edit-refuses-the-whole-patch
+    holds: [effects]
+    fixture:
+      files: {a.txt: "a b a\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: b, new: c}
+          - {old: a, new: x}
+    expect:
+      error: code.Ambiguous
+      output: {index: 1, count: 2}
+      files:
+        a.txt: unchanged
+  - name: patch-an-empty-old-in-any-edit-is-refused
+    holds: [effects]
+    fixture:
+      files: {a.txt: "alpha\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: alpha, new: x}
+          - {old: "", new: y}
+    expect:
+      error: code.EmptyOld
+      output: {index: 1}
+      files:
+        a.txt: unchanged
+  - name: patch-no-edits-change-nothing-and-the-diff-is-empty
+    holds: [output, effects]
+    fixture:
+      files: {a.txt: "alpha\n"}
+    call: {operation: code.patch, input: {path: a.txt, edits: []}}
+    expect:
+      outcome: ok
+      output:
+        applied: 0
+        diff: ""
+        sha256: {$sha256_of: a.txt}
+      files:
+        a.txt: unchanged
+  - name: patch-a-stale-digest-is-refused-and-the-file-is-unchanged
+    holds: [preconditions]
+    fixture:
+      files: {a.txt: "alpha\nbeta\ngamma\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: alpha, new: ALPHA}
+        expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    expect:
+      error: code.PreconditionFailed
+      output:
+        expected: "0000000000000000000000000000000000000000000000000000000000000000"
+        actual: {$sha256_of: a.txt}
+      files:
+        a.txt: unchanged
+  - name: patch-a-matching-digest-lets-the-patch-through
+    holds: [preconditions]
+    fixture:
+      files: {a.txt: "alpha\nbeta\ngamma\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: alpha, new: ALPHA}
+          - {old: gamma, new: GAMMA}
+        expected_sha256: 4fdbc441ea7b546100e086ac1e4fc5ae6749b7314311c99db05be450eca12996
+    expect:
+      outcome: ok
+      output: {applied: 2}
+      files:
+        a.txt: {sha256: 37d16a23a527a146e8e5b599cb7c02a9dce955e04925dbfe9d669237cccec09d}
+  - name: patch-the-same-patch-a-second-time-finds-nothing-to-replace
+    holds: [idempotency]
+    fixture:
+      files: {a.txt: "ALPHA\nbeta\nGAMMA\n"}
+    call:
+      operation: code.patch
+      input:
+        path: a.txt
+        edits:
+          - {old: alpha, new: ALPHA}
+          - {old: gamma, new: GAMMA}
+    expect:
+      error: code.NoMatch
+      output: {index: 0}
+      files:
+        a.txt: unchanged
+  - name: patch-a-missing-file-is-not-found
+    holds: [subjects]
+    call:
+      operation: code.patch
+      input: {path: missing.txt, edits: [{old: a, new: b}]}
+    expect:
+      error: code.NotFound
+      output: {path: missing.txt}
+  - name: patch-a-path-that-climbs-out-is-refused
+    holds: [subjects]
+    call:
+      operation: code.patch
+      input: {path: ../escaped-by-patch.txt, edits: [{old: a, new: b}]}
+    expect:
+      error: code.OutsideWorkspace
+      output: {path: ../escaped-by-patch.txt}

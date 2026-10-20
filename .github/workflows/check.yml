@@ -54,5 +54,19 @@ jobs:
           install -D -m 755 "$RUNNER_TEMP/aep-$AEP_VERSION-x86_64-unknown-linux-gnu/aep" "$RUNNER_TEMP/aep-bin/aep"
           echo "$RUNNER_TEMP/aep-bin" >> "$GITHUB_PATH"
 
+      - name: Install Rust 1.98.0 for the msrv check
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: 1.98.0
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
       - name: task check
         run: task check

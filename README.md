@@ -17,20 +17,36 @@ This repository separates the contract from the implementation:
   "implements `fs` v1alpha1" when it passes that toolset's conformance suite; any harness can link
   these crates or bring its own implementation and pass the same suite.
 
-Status: started 2026-10-19. The design is [docs/design/tool-contracts.md](docs/design/tool-contracts.md);
-the first contracts (`fs`, `code-editor`) and their crates are planned in the AEP store under
-`.engineering/planning`.
+Status: started 2026-10-19. The design is [docs/design/tool-contracts.md](docs/design/tool-contracts.md).
+The first release carries the profile, the `fs` and `code-editor` contracts with their suites, and
+the three crates below; the rest of the toolsets are planned in the AEP store under
+`.engineering/planning`. Changes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Layout
 
 | path | what |
 |---|---|
-| `contracts/` | the `tool-contract/1` profile and one directory per toolset and version |
-| `crates/` | default implementations, `tool-<toolset>` (none yet) |
+| `contracts/profile/tool-contract-1.md` | the `tool-contract/1` profile and the `tool-conformance/1` suite format |
+| `contracts/<toolset>/<version>/` | `contract.yaml`, `semantics.md`, `scenarios/`, `fixtures/` |
+| `crates/` | the crates below |
 | `docs/design/` | the design |
 | `docs/inventory.md` | the inventory of existing tool layers the design starts from |
 | `.engineering/planning` | the AEP planning store |
 
+## Crates
+
+| crate | what | from | licence |
+|---|---|---|---|
+| `b10x-tool-contract` | profile types, validator, conformance runner, `tool-contract validate` | written here | Apache-2.0 |
+| `b10x-tool-fs` | `fs` v1alpha1: read, list, glob, stat over one workspace root | harness 0.13.3 `harness-tools/src/local.rs` | LicenseRef-B10x-Proprietary |
+| `b10x-tool-code-editor` | `code-editor` v1alpha1: write, edit, patch, move, delete | harness 0.13.3 `harness-tools/src/local.rs` | LicenseRef-B10x-Proprietary |
+| `b10x-tool-toolchain` | declarative toolchain registry deriving `build-test` operations | harness 0.13.3 `harness-toolchain` | LicenseRef-B10x-Proprietary |
+
+Run `task check` for the gate, or `cargo test -p <crate>` for one crate's unit tests, its conformance
+run and its mutant tests.
+
 ## License
 
-Apache-2.0, see [LICENSE](LICENSE).
+The repository and the crates written here are Apache-2.0, see [LICENSE](LICENSE). The crates moved
+from harness keep harness's licence, declared in each crate's `Cargo.toml` and named in the table
+above.

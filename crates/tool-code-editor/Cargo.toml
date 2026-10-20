@@ -1,0 +1,30 @@
+[package]
+name = "b10x-tool-code-editor"
+description = "The code-editor toolset: code.write, code.edit, code.patch, code.move and code.delete over one workspace root"
+license = "LicenseRef-B10x-Proprietary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "tool_code_editor"
+
+[features]
+mutants = []
+
+[dependencies]
+b10x-tool-contract = { path = "../tool-contract" }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+similar = "2"
+thiserror.workspace = true
+
+[dev-dependencies]
+b10x-tool-code-editor = { path = ".", features = ["mutants"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true

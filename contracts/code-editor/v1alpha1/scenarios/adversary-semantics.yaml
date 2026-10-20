@@ -1,0 +1,53 @@
+format: tool-conformance/1
+toolset: code-editor
+version: v1alpha1
+scenarios:
+  - name: adversary-move-onto-a-dangling-link-is-refused-as-exists
+    holds: [subjects, effects]
+    fixture:
+      dir: fixtures/dangling-link
+      files: {a.txt: "x\n"}
+    call: {operation: code.move, input: {from: a.txt, to: link}}
+    expect:
+      error: code.Exists
+      output: {path: link}
+      files:
+        a.txt: unchanged
+        link: unchanged
+        missing.txt: absent
+  - name: adversary-edit-an-old-that-fits-at-two-overlapping-places-is-ambiguous
+    holds: [effects, output]
+    fixture:
+      files: {a.txt: "aaa\n"}
+    call: {operation: code.edit, input: {path: a.txt, old: aa, new: b}}
+    expect:
+      error: code.Ambiguous
+      output: {index: 0, count: 2}
+      files:
+        a.txt: unchanged
+  - name: adversary-edit-an-old-equal-to-new-still-answers-a-non-empty-diff
+    holds: [output]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: code.edit, input: {path: a.txt, old: one, new: one}}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        diff: {$min_len: 1}
+      files:
+        a.txt: unchanged
+  - name: adversary-patch-a-non-empty-patch-that-changes-nothing-answers-a-non-empty-diff
+    holds: [output]
+    fixture:
+      files: {a.txt: "one\n"}
+    call:
+      operation: code.patch
+      input: {path: a.txt, edits: [{old: one, new: one}]}
+    expect:
+      outcome: ok
+      output:
+        applied: 1
+        diff: {$min_len: 1}
+      files:
+        a.txt: unchanged

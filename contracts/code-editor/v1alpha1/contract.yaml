@@ -1,0 +1,271 @@
+format: tool-contract/1
+toolset: code-editor
+family: code
+version: v1alpha1
+summary: >-
+  Writing, editing, patching, moving and deleting regular files under one workspace root. Every
+  path is judged by where it lands after links are followed; a path that lands outside the
+  workspace is refused. A missing parent directory is never created, a link is never written
+  through unless it lands inside the workspace, and an edit changes exactly one place or nothing.
+  An operation that replaces or removes a file can be guarded by expected_sha256, the digest the
+  file must have before anything is written.
+types:
+  - name: code.Edit
+    kind: struct
+    summary: One replacement of a patch, resolved against the original text.
+    fields:
+      - {name: old, type: String, description: "The text to replace; it must appear exactly once in the original."}
+      - {name: new, type: String, description: "The text that replaces it."}
+errors:
+  - name: code.NotFound
+    summary: No file at the path.
+    fields: [{name: path, type: String}]
+  - name: code.NotAFile
+    summary: The path names a directory or something else that is not a regular file.
+    fields: [{name: path, type: String}]
+  - name: code.OutsideWorkspace
+    summary: The path lands outside the workspace, or climbs out of a directory that does not exist.
+    fields: [{name: path, type: String}]
+  - name: code.ParentMissing
+    summary: The file's parent directory does not exist; it is never created.
+    fields: [{name: path, type: String}]
+  - name: code.IsSymlink
+    summary: The path is a link that leads nowhere, or a link this toolset will not remove.
+    fields: [{name: path, type: String}]
+  - name: code.EmptyOld
+    summary: An edit's old is empty; an edit has to name where it lands.
+    fields: [{name: index, type: Integer, description: "Which edit; 0 for code.edit."}]
+  - name: code.NoMatch
+    summary: An edit's old appears nowhere in the file.
+    fields: [{name: index, type: Integer, description: "Which edit; 0 for code.edit."}]
+  - name: code.Ambiguous
+    summary: An edit's old appears more than once; the file is unchanged.
+    fields:
+      - {name: index, type: Integer, description: "Which edit; 0 for code.edit."}
+      - {name: count, type: Integer, description: "How many times old appears."}
+  - name: code.Overlap
+    summary: Two edits of a patch name ranges of the original that meet; the file is unchanged.
+    fields:
+      - {name: first, type: Integer, description: "The lower index of the two edits."}
+      - {name: second, type: Integer, description: "The higher index."}
+  - name: code.PreconditionFailed
+    summary: The file's digest is not expected_sha256; nothing was changed.
+    fields:
+      - {name: expected, type: String, description: "The digest the caller gave."}
+      - {name: actual, type: Optional<String>, description: "The digest the file has; absent when there is no file."}
+  - name: code.Exists
+    summary: Something is already at the destination; a move never replaces it.
+    fields: [{name: path, type: String}]
+  - name: code.Io
+    summary: The operating system refused; the message carries its words.
+    fields: [{name: path, type: String}]
+  - name: code.NotText
+    summary: The file is not valid UTF-8 text, so there is no text to find old in; the file is unchanged.
+    fields: [{name: path, type: String}]
+  - name: code.InvalidInput
+    summary: The input does not fit the operation's input fields; the message says which.
+operations:
+  - name: code.write
+    summary: Replace or create a file with the given text, whole.
+    guidance: >-
+      Name the file by its workspace-relative path. The parent directory must exist. Pass
+      expected_sha256 from a previous read or write to make sure nobody changed the file in between;
+      for a file that does not exist yet, give no expected_sha256.
+    renderings: {claude: Write, codex: write_file, mcp: code_write}
+    input:
+      - {name: path, type: String, description: "The file, relative to the workspace root."}
+      - {name: text, type: String, description: "The whole text the file is to hold."}
+      - {name: expected_sha256, type: Optional<String>, description: "The digest the file must have before it is replaced."}
+    output:
+      - {name: path, type: String, description: "The file the bytes reached, under its own name."}
+      - {name: bytes, type: Integer, description: "How many bytes the file holds."}
+      - {name: sha256, type: String, description: "The digest of the file as written."}
+    outcomes:
+      - {name: written, summary: The file holds text.}
+      - {name: not-a-file, error: code.NotAFile}
+      - {name: outside-workspace, error: code.OutsideWorkspace}
+      - {name: parent-missing, error: code.ParentMissing}
+      - {name: is-symlink, error: code.IsSymlink}
+      - {name: precondition-failed, error: code.PreconditionFailed}
+      - {name: io, error: code.Io}
+      - {name: invalid-input, error: code.InvalidInput}
+    profile:
+      effects: [write]
+      consequences: []
+      risk: medium
+      idempotency: idempotent
+      preconditions: [expected_sha256]
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "code.write({path})"}
+      placement: local
+      capability: workspace.write
+      output: {untrusted: false, failure_as_result: true}
+  - name: code.edit
+    summary: Replace exactly one occurrence of old with new in a file.
+    guidance: >-
+      old must appear exactly once; include enough surrounding text to name one place. Occurrences
+      are counted overlapping, so aa fits at two places in aaa. The reply carries a unified diff of
+      what changed, headed by the path twice even when old equals new. Pass expected_sha256 to
+      guard against a file that changed since it was read.
+    renderings: {claude: Edit, codex: edit_file, mcp: code_edit}
+    input:
+      - {name: path, type: String, description: "The file, relative to the workspace root."}
+      - {name: old, type: String, description: "The text to replace; it must appear exactly once."}
+      - {name: new, type: String, description: "The text that replaces it."}
+      - {name: expected_sha256, type: Optional<String>, description: "The digest the file must have before it is changed."}
+    output:
+      - {name: path, type: String, description: "The file, under its own name."}
+      - {name: bytes, type: Integer, description: "How many bytes the file holds now."}
+      - {name: sha256, type: String, description: "The digest of the file as written."}
+      - {name: diff, type: String, description: "A unified diff of the file before and after, for a reader; two header lines and no hunk mean the content did not change."}
+    outcomes:
+      - {name: edited, summary: The one occurrence of old is now new.}
+      - {name: not-found, error: code.NotFound}
+      - {name: not-a-file, error: code.NotAFile}
+      - {name: outside-workspace, error: code.OutsideWorkspace}
+      - {name: is-symlink, error: code.IsSymlink}
+      - {name: empty-old, error: code.EmptyOld}
+      - {name: no-match, error: code.NoMatch}
+      - {name: ambiguous, error: code.Ambiguous}
+      - {name: not-text, error: code.NotText}
+      - {name: precondition-failed, error: code.PreconditionFailed}
+      - {name: io, error: code.Io}
+      - {name: invalid-input, error: code.InvalidInput}
+    profile:
+      effects: [write]
+      consequences: []
+      risk: medium
+      idempotency: non-idempotent
+      preconditions: [expected_sha256]
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "code.edit({path})"}
+      placement: local
+      capability: workspace.write
+      output: {untrusted: false, failure_as_result: true}
+  - name: code.patch
+    summary: Apply several edits to one file, each resolved against the original text.
+    guidance: >-
+      Every edit's old is looked up in the file as it is before the patch, and must appear exactly
+      once there; two edits may not touch the same bytes. Either every edit applies or nothing
+      changes. Prefer this over a chain of code.edit calls when the edits are known together.
+    renderings: {codex: apply_patch, mcp: code_patch}
+    input:
+      - {name: path, type: String, description: "The file, relative to the workspace root."}
+      - {name: edits, type: List<code.Edit>, description: "The edits, each resolved against the original text."}
+      - {name: expected_sha256, type: Optional<String>, description: "The digest the file must have before it is changed."}
+    output:
+      - {name: path, type: String, description: "The file, under its own name."}
+      - {name: bytes, type: Integer, description: "How many bytes the file holds now."}
+      - {name: sha256, type: String, description: "The digest of the file as written."}
+      - {name: diff, type: String, description: "A unified diff of the file before and after, for a reader; two header lines and no hunk mean the content did not change; empty when no edit was applied."}
+      - {name: applied, type: Integer, description: "How many edits were applied."}
+    outcomes:
+      - {name: patched, summary: Every edit applied.}
+      - {name: not-found, error: code.NotFound}
+      - {name: not-a-file, error: code.NotAFile}
+      - {name: outside-workspace, error: code.OutsideWorkspace}
+      - {name: is-symlink, error: code.IsSymlink}
+      - {name: empty-old, error: code.EmptyOld}
+      - {name: no-match, error: code.NoMatch}
+      - {name: ambiguous, error: code.Ambiguous}
+      - {name: overlap, error: code.Overlap}
+      - {name: not-text, error: code.NotText}
+      - {name: precondition-failed, error: code.PreconditionFailed}
+      - {name: io, error: code.Io}
+      - {name: invalid-input, error: code.InvalidInput}
+    profile:
+      effects: [write]
+      consequences: []
+      risk: medium
+      idempotency: non-idempotent
+      preconditions: [expected_sha256]
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "code.patch({path})"}
+      placement: local
+      capability: workspace.write
+      output: {untrusted: false, failure_as_result: true}
+  - name: code.move
+    summary: Move a regular file to a path where nothing is yet.
+    guidance: >-
+      Both paths are workspace-relative. The destination's parent directory must exist and the
+      destination itself must not; a move never replaces a file. Only regular files move.
+    renderings: {mcp: code_move}
+    input:
+      - {name: from, type: String, description: "The file to move."}
+      - {name: to, type: String, description: "Where it goes; nothing may be there yet."}
+    output:
+      - {name: from, type: String, description: "The file that was moved, under its own name."}
+      - {name: to, type: String, description: "Where it is now."}
+    outcomes:
+      - {name: moved, summary: The file is at to and no longer at from.}
+      - {name: not-found, error: code.NotFound}
+      - {name: not-a-file, error: code.NotAFile}
+      - {name: outside-workspace, error: code.OutsideWorkspace}
+      - {name: parent-missing, error: code.ParentMissing}
+      - {name: is-symlink, error: code.IsSymlink}
+      - {name: exists, error: code.Exists}
+      - {name: io, error: code.Io}
+      - {name: invalid-input, error: code.InvalidInput}
+    profile:
+      effects: [write]
+      consequences: []
+      risk: medium
+      idempotency: non-idempotent
+      preconditions: []
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: from, kind: path, pattern: "code.move({from})"}
+        - {field: to, kind: path, pattern: "code.move({to})"}
+      placement: local
+      capability: workspace.write
+      output: {untrusted: false, failure_as_result: true}
+  - name: code.delete
+    summary: Remove a regular file.
+    guidance: >-
+      Only a regular file is removed; a directory or a link is refused by name. Pass
+      expected_sha256 to make sure the file removed is the one that was read.
+    renderings: {mcp: code_delete}
+    input:
+      - {name: path, type: String, description: "The file, relative to the workspace root."}
+      - {name: expected_sha256, type: Optional<String>, description: "The digest the file must have before it is removed."}
+    output:
+      - {name: path, type: String, description: "The file that was removed, under its own name."}
+    outcomes:
+      - {name: deleted, summary: The file is gone.}
+      - {name: not-found, error: code.NotFound}
+      - {name: not-a-file, error: code.NotAFile}
+      - {name: outside-workspace, error: code.OutsideWorkspace}
+      - {name: is-symlink, error: code.IsSymlink}
+      - {name: precondition-failed, error: code.PreconditionFailed}
+      - {name: io, error: code.Io}
+      - {name: invalid-input, error: code.InvalidInput}
+    profile:
+      effects: [write]
+      consequences: [delete]
+      risk: medium
+      idempotency: idempotent
+      preconditions: [expected_sha256]
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "code.delete({path})"}
+      placement: local
+      capability: workspace.write
+      output: {untrusted: false, failure_as_result: true}

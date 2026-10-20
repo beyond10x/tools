@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T04:38:22Z",
+  "actor": "human:timo",
+  "artifact": "story:toolset-toolchain",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p b10x-tool-toolchain --locked run by the coordinator in tree impl-toolset-toolchain after correction round 2",
+    "reference": "wave root coordinator/scratch/verify-toolchain.log: 25 lib and 6 adversary cases passed, exit 0; lib.rs diff against the harness snapshot 17 lines (three documented changes); base 796937c has no such crate"
+  }
+}
