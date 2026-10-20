@@ -1,0 +1,193 @@
+format: tool-conformance/1
+toolset: fs
+version: v1alpha1
+scenarios:
+  - name: a-read-answers-numbered-lines-with-the-whole-files-digest
+    holds: [effects, bounds, paging, subjects, output]
+    fixture:
+      files: {a.txt: "one\ntwo\nthree\n"}
+    call: {operation: fs.read, input: {path: a.txt}}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        bytes: 14
+        text: "     1\tone\n     2\ttwo\n     3\tthree\n"
+        lines: {from: 1, to: 3, total: 3}
+        truncated: false
+        truncated_lines: []
+        sha256: {$sha256_of: a.txt}
+        lines_counted_to: {$absent: true}
+        note: {$absent: true}
+      files: {a.txt: unchanged}
+  - name: the-same-read-a-second-time-answers-the-same
+    holds: [idempotency, determinism]
+    fixture:
+      files: {a.txt: "one\ntwo\nthree\n"}
+    call: {operation: fs.read, input: {path: a.txt}}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        bytes: 14
+        text: "     1\tone\n     2\ttwo\n     3\tthree\n"
+        lines: {from: 1, to: 3, total: 3}
+        truncated: false
+        truncated_lines: []
+        sha256: {$sha256_of: a.txt}
+      files: {a.txt: unchanged}
+  - name: a-window-in-the-middle-is-truncated-and-carries-the-whole-files-digest
+    holds: [paging]
+    fixture:
+      files: {a.txt: "one\ntwo\nthree\n"}
+    call: {operation: fs.read, input: {path: a.txt, offset: 2, limit: 1}}
+    expect:
+      outcome: ok
+      output:
+        text: "     2\ttwo\n"
+        lines: {from: 2, to: 2, total: 3}
+        truncated: true
+        truncated_lines: []
+        sha256: {$sha256_of: a.txt}
+      files: {a.txt: unchanged}
+  - name: a-window-that-ends-on-the-last-line-is-not-truncated
+    holds: [paging]
+    fixture:
+      files: {a.txt: "one\ntwo\nthree\n"}
+    call: {operation: fs.read, input: {path: a.txt, offset: 2, limit: 99}}
+    expect:
+      outcome: ok
+      output:
+        text: "     2\ttwo\n     3\tthree\n"
+        lines: {from: 2, to: 3, total: 3}
+        truncated: false
+        sha256: {$sha256_of: a.txt}
+  - name: a-file-over-the-byte-ceiling-is-cut-at-the-ceiling
+    holds: [bounds, paging]
+    fixture:
+      dir: fixtures/large
+    call: {operation: fs.read, input: {path: filler.txt}}
+    expect:
+      outcome: ok
+      output:
+        bytes: 71680
+        lines: {from: 1, to: 9362, total: 10240}
+        truncated: true
+        truncated_lines: []
+        sha256: {$sha256_of: filler.txt}
+      files: {filler.txt: unchanged}
+  - name: a-smaller-byte-ceiling-closes-the-window-sooner
+    holds: [bounds]
+    fixture:
+      dir: fixtures/large
+    call: {operation: fs.read, input: {path: filler.txt, max_bytes: 1024}}
+    expect:
+      outcome: ok
+      output:
+        bytes: 71680
+        lines: {from: 1, to: 146, total: 10240}
+        truncated: true
+        sha256: {$sha256_of: filler.txt}
+  - name: a-byte-ceiling-above-the-maximum-is-capped-at-the-maximum
+    holds: [bounds]
+    fixture:
+      dir: fixtures/over-ceiling
+    call: {operation: fs.read, input: {path: filler.txt, max_bytes: 300000}}
+    expect:
+      outcome: ok
+      output:
+        bytes: 301000
+        lines: {from: 1, to: 37449, total: 43000}
+        truncated: true
+        truncated_lines: []
+        sha256: {$sha256_of: filler.txt}
+      files: {filler.txt: unchanged}
+  - name: a-first-line-over-the-byte-ceiling-is-answered-cut-and-named
+    holds: [bounds]
+    fixture:
+      files: {one.txt: "abcdefghij\n"}
+    call: {operation: fs.read, input: {path: one.txt, max_bytes: 4}}
+    expect:
+      outcome: ok
+      output:
+        text: "     1\tabc\n"
+        truncated: true
+        truncated_lines: [1]
+        lines: {from: 1, to: 1, total: 1}
+  - name: a-crlf-file-reads-with-the-carriage-returns-dropped
+    holds: [output]
+    fixture:
+      files: {dos.txt: "alpha\r\nbeta\r\n"}
+    call: {operation: fs.read, input: {path: dos.txt}}
+    expect:
+      outcome: ok
+      output:
+        text: "     1\talpha\n     2\tbeta\n"
+        truncated: false
+        truncated_lines: []
+        lines: {from: 1, to: 2, total: 2}
+        bytes: 13
+  - name: an-empty-file-read-from-line-one-is-the-file
+    holds: [output]
+    fixture:
+      files: {empty.txt: ""}
+    call: {operation: fs.read, input: {path: empty.txt}}
+    expect:
+      outcome: ok
+      output:
+        text: ""
+        bytes: 0
+        lines: {from: 1, to: 0, total: 0}
+        truncated: false
+        sha256: {$sha256_of: empty.txt}
+  - name: a-window-past-the-end-is-refused-with-nothing-read
+    holds: [paging, output]
+    fixture:
+      files: {three.txt: "a\nb\nc\n"}
+    call: {operation: fs.read, input: {path: three.txt, offset: 9, limit: 10}}
+    expect:
+      error: fs.InvalidWindow
+      output: {path: three.txt}
+      files: {three.txt: unchanged}
+  - name: offset-zero-names-no-line
+    holds: [paging]
+    fixture:
+      files: {three.txt: "a\nb\nc\n"}
+    call: {operation: fs.read, input: {path: three.txt, offset: 0}}
+    expect:
+      error: fs.InvalidWindow
+      output: {path: three.txt}
+  - name: limit-zero-names-no-line
+    holds: [paging]
+    fixture:
+      files: {three.txt: "a\nb\nc\n"}
+    call: {operation: fs.read, input: {path: three.txt, offset: 2, limit: 0}}
+    expect:
+      error: fs.InvalidWindow
+      output: {path: three.txt}
+      files: {three.txt: unchanged}
+  - name: a-missing-file-is-an-error-outcome-not-a-panic
+    holds: [output, subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: fs.read, input: {path: missing.txt}}
+    expect:
+      error: fs.NotFound
+      output: {path: missing.txt}
+      files: {a.txt: unchanged, missing.txt: absent}
+  - name: a-directory-is-not-a-file
+    holds: [output]
+    fixture:
+      files: {sub/a.txt: "x\n"}
+    call: {operation: fs.read, input: {path: sub}}
+    expect:
+      error: fs.NotAFile
+      output: {path: sub}
+  - name: an-offset-that-is-not-a-number-is-invalid-input
+    holds: [output]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: fs.read, input: {path: a.txt, offset: two}}
+    expect:
+      error: fs.InvalidInput
+      files: {a.txt: unchanged}

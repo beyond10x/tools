@@ -1,0 +1,291 @@
+format: tool-contract/1
+toolset: fs
+version: v1alpha1
+summary: >-
+  Bounded, read-only views of one workspace root: a numbered window of a file with the digest of
+  the whole file, a directory listing, a glob over the tree, and the kind, size and digest of one
+  entry. Every path is resolved inside the root and refused where it lands outside, a link
+  included; every cut a bound makes is named in the result; nothing is written.
+types:
+  - name: fs.Kind
+    kind: enum
+    summary: What an entry is by its own type; a link is a symlink, whatever it points at.
+    variants: [file, directory, symlink, other]
+  - name: fs.Window
+    kind: struct
+    summary: Which lines of the file the text holds, so a window is never mistaken for the file.
+    fields:
+      - name: from
+        type: Integer
+        description: The first line answered, numbered from 1.
+      - name: to
+        type: Integer
+        description: The last line answered; one below from when nothing was, which is only an empty file read from line 1.
+      - name: total
+        type: Optional<Integer>
+        description: How many lines the file has; null when the count stopped at the 16 MiB counting bound.
+  - name: fs.Entry
+    kind: struct
+    summary: One entry of a listing.
+    fields:
+      - name: name
+        type: String
+        description: The entry's own name.
+      - name: kind
+        type: fs.Kind
+        description: What it is, by its own type.
+      - name: bytes
+        type: Optional<Integer>
+        description: The size of a file; null for anything that is not one.
+errors:
+  - name: fs.NotFound
+    summary: Nothing exists at the path; it is absent, a component of it is a file where a directory would have to be, or a link there leads nowhere.
+    fields: [{name: path, type: String}]
+  - name: fs.NotAFile
+    summary: The path names something that is not a regular file.
+    fields: [{name: path, type: String}]
+  - name: fs.NotADirectory
+    summary: The path names something that is not a directory.
+    fields: [{name: path, type: String}]
+  - name: fs.OutsideWorkspace
+    summary: The path lands outside the workspace root, by climbing out, by starting at the filesystem root or through a link; nothing was read.
+    fields: [{name: path, type: String}]
+  - name: fs.InvalidWindow
+    summary: offset or limit is 0, which names no line, or offset names a line past the end of the file or past where the line count reached; nothing was read.
+    fields: [{name: path, type: String}]
+  - name: fs.InvalidGlob
+    summary: glob is empty or does not compile; the message carries the compiler's words.
+    fields: [{name: glob, type: String}]
+  - name: fs.InvalidInput
+    summary: The input is not the operation's input; a field is missing, unknown or of the wrong type, and the message says which.
+  - name: fs.Io
+    summary: The filesystem refused for a reason other than the path's absence; the message carries the system's words.
+    fields: [{name: path, type: String}]
+operations:
+  - name: fs.read
+    summary: Read a window of a file as numbered lines, with the digest of the whole file.
+    guidance: >-
+      The text is numbered like cat -n: a right-aligned line number, a tab, then the line. Strip
+      the number before quoting a line back to an editing operation. Page with offset (the first
+      line, numbered from 1) and limit; lines.total says how many lines the file has, so a window
+      is never mistaken for the whole file, and truncated says the window stopped before the last
+      line or cut a line. The window closes at limit or at max_bytes (default 65536, at most
+      262144), whichever comes first; the first line is always answered, cut if it alone is over
+      the ceiling. A line over 2000 characters is cut and its number is in truncated_lines. On a
+      file over 16 MiB (more than 16777216 bytes) the line count stops: lines.total and sha256
+      are null, lines_counted_to
+      names the last line counted, note says so, and a window past that line is refused. bytes is
+      the whole file's size whatever the count did.
+    renderings: {claude: Read, codex: read_file, mcp: fs_read}
+    input:
+      - name: path
+        type: String
+        description: The file, relative to the workspace root.
+      - name: offset
+        type: Optional<Integer>
+        description: The first line to read, numbered from 1. Default 1; 0 names no line and is refused.
+      - name: limit
+        type: Optional<Integer>
+        description: How many lines at most. Without it the window closes at the byte ceiling; 0 names no line and is refused.
+      - name: max_bytes
+        type: Optional<Integer>
+        description: The byte ceiling of the window. Default 65536; a larger ask is capped at 262144.
+    output:
+      - name: path
+        type: String
+        description: The file's workspace-relative path after links were followed.
+      - name: bytes
+        type: Integer
+        description: The size of the whole file, from its metadata.
+      - name: text
+        type: String
+        description: The window as numbered lines; a right-aligned line number, a tab, the line, a newline.
+      - name: lines
+        type: fs.Window
+        description: Which lines the text holds.
+      - name: truncated
+        type: Boolean
+        description: The window stopped before the file's last line, a line in it was cut, or the line count stopped at its bound.
+      - name: truncated_lines
+        type: List<Integer>
+        description: The numbers of the lines the window cut; empty when none was.
+      - name: sha256
+        type: Optional<String>
+        description: The SHA-256 of the whole file as lowercase hex; null when the line count stopped at its bound.
+      - name: lines_counted_to
+        type: Optional<Integer>
+        description: The last line the count reached when it stopped at its bound; absent otherwise.
+      - name: note
+        type: Optional<String>
+        description: Why lines.total is null, when it is; absent otherwise.
+    outcomes:
+      - {name: read, summary: The window is answered.}
+      - {name: invalid-input, error: fs.InvalidInput}
+      - {name: not-found, error: fs.NotFound}
+      - {name: not-a-file, error: fs.NotAFile}
+      - {name: outside-workspace, error: fs.OutsideWorkspace}
+      - {name: invalid-window, error: fs.InvalidWindow}
+      - {name: io, error: fs.Io}
+    profile:
+      effects: [read]
+      consequences: []
+      risk: low
+      idempotency: idempotent
+      preconditions: []
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+        output_bytes: {default: 65536, max: 262144}
+      paging: {offset: offset, limit: limit, truncated: truncated, digest: sha256}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "fs.read({path})"}
+      placement: local
+      capability: workspace.read
+      output: {untrusted: true, failure_as_result: true}
+  - name: fs.list
+    summary: List the entries of a directory in name order, each with its own kind.
+    guidance: >-
+      Entries are in name order, each with its own kind: a link is listed as a symlink and is not
+      followed, so a link to a directory is neither a file nor a directory here. bytes is set for
+      files only. At most 500 entries are answered; truncated says the directory holds more. The
+      path defaults to the workspace root, answered as the empty path.
+    renderings: {claude: LS, codex: list_dir, mcp: fs_list}
+    input:
+      - name: path
+        type: Optional<String>
+        description: The directory, relative to the workspace root. Default the root itself.
+    output:
+      - name: path
+        type: String
+        description: The directory's workspace-relative path; empty for the root.
+      - name: entries
+        type: List<fs.Entry>
+        description: The entries in name order, at most 500.
+      - name: truncated
+        type: Boolean
+        description: The directory holds more entries than were answered.
+    outcomes:
+      - {name: listed, summary: The entries are answered.}
+      - {name: invalid-input, error: fs.InvalidInput}
+      - {name: not-found, error: fs.NotFound}
+      - {name: not-a-directory, error: fs.NotADirectory}
+      - {name: outside-workspace, error: fs.OutsideWorkspace}
+      - {name: io, error: fs.Io}
+    profile:
+      effects: [read]
+      consequences: []
+      risk: low
+      idempotency: idempotent
+      preconditions: []
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      paging: {truncated: truncated}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "fs.list({path})"}
+      placement: local
+      capability: workspace.read
+      output: {untrusted: true, failure_as_result: true}
+  - name: fs.glob
+    summary: Find the files under a directory whose name or path matches a glob.
+    guidance: >-
+      A glob with no slash matches the file's name anywhere under path, so *.rs is every Rust
+      file; one with a slash matches the whole workspace-relative path and * does not cross a
+      separator, so crates/**/*.rs is the whole path. The walk skips .git, target, node_modules,
+      .venv and __pycache__, does not follow a link that leads out of the workspace, and stops
+      descending at depth 12: depth_bound_reached says a deeper match may exist and nothing else
+      in the result would. At most 500 paths are answered, fewer when max_results says so;
+      truncated says more matched. An empty glob is refused rather than answered with an empty
+      list.
+    renderings: {claude: Glob, codex: glob, mcp: fs_glob}
+    input:
+      - name: glob
+        type: String
+        description: The pattern; a name when it has no slash, a workspace-relative path when it has one.
+      - name: path
+        type: Optional<String>
+        description: Where to start, relative to the workspace root. Default the root itself.
+      - name: max_results
+        type: Optional<Integer>
+        description: The most paths to answer. Default 500; a larger ask is capped at 500.
+    output:
+      - name: paths
+        type: List<String>
+        description: The matching files' workspace-relative paths, in walk order.
+      - name: truncated
+        type: Boolean
+        description: More paths matched than were answered.
+      - name: depth_bound_reached
+        type: Boolean
+        description: The walk stopped descending at depth 12 somewhere, so matches below it are not in paths.
+    outcomes:
+      - {name: matched, summary: The paths are answered.}
+      - {name: invalid-input, error: fs.InvalidInput}
+      - {name: not-found, error: fs.NotFound}
+      - {name: outside-workspace, error: fs.OutsideWorkspace}
+      - {name: invalid-glob, error: fs.InvalidGlob}
+      - {name: io, error: fs.Io}
+    profile:
+      effects: [read]
+      consequences: []
+      risk: low
+      idempotency: idempotent
+      preconditions: []
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      paging: {limit: max_results, truncated: truncated}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "fs.glob({path})"}
+      placement: local
+      capability: workspace.read
+      output: {untrusted: true, failure_as_result: true}
+  - name: fs.stat
+    summary: Answer the kind, size and digest of one entry without reading it as text.
+    guidance: >-
+      kind is the entry's own: a link is a symlink whatever it points at, answered under its own
+      name, while a file or directory reached through a link is answered under the target's name.
+      A link that leads out of the workspace is refused. bytes and sha256 are set for a file only,
+      and sha256 only for a file of at most 16 MiB (16777216 bytes).
+    renderings: {mcp: fs_stat}
+    input:
+      - name: path
+        type: String
+        description: The entry, relative to the workspace root.
+    output:
+      - name: path
+        type: String
+        description: The entry's workspace-relative path; the target's for a file or directory, the link's own for a symlink.
+      - name: kind
+        type: fs.Kind
+        description: The entry's own kind.
+      - name: bytes
+        type: Optional<Integer>
+        description: The size of a file; null for anything else.
+      - name: sha256
+        type: Optional<String>
+        description: The SHA-256 of a file of at most 16 MiB (16777216 bytes) as lowercase hex; null for a larger file and for anything that is not a file.
+    outcomes:
+      - {name: described, summary: The entry is described.}
+      - {name: invalid-input, error: fs.InvalidInput}
+      - {name: not-found, error: fs.NotFound}
+      - {name: outside-workspace, error: fs.OutsideWorkspace}
+      - {name: io, error: fs.Io}
+    profile:
+      effects: [read]
+      consequences: []
+      risk: low
+      idempotency: idempotent
+      preconditions: []
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "fs.stat({path})"}
+      placement: local
+      capability: workspace.read
+      output: {untrusted: true, failure_as_result: true}

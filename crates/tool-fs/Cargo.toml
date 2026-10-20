@@ -1,0 +1,31 @@
+[package]
+name = "b10x-tool-fs"
+description = "The fs toolset: fs.read, fs.list, fs.glob and fs.stat over one workspace root"
+license = "LicenseRef-B10x-Proprietary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "tool_fs"
+
+[features]
+mutants = []
+
+[dependencies]
+b10x-tool-contract = { path = "../tool-contract" }
+globset = "0.4"
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+b10x-tool-fs = { path = ".", features = ["mutants"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true
