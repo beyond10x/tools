@@ -6,6 +6,11 @@ the bare version.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-20
+
+The first release: ADR 0095 phase T1, seeded from harness 0.13.3 under ADR 0097. harness and
+metaharness pin this tag.
+
 ### Added
 
 - The `tool-contract/1` profile (`contracts/profile/tool-contract-1.md`): effects, consequences,
