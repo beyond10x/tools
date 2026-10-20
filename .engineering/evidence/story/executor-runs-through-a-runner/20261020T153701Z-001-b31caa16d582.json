@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T15:37:01Z",
+  "actor": "human:timo",
+  "artifact": "story:executor-runs-through-a-runner",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the six gate steps of Taskfile check run one by one on impl/executor-runs-through-a-runner at 133e3ad",
+    "reference": "every step exit 0; 50 test lanes, 360 tests passed, 0 failed; five contract documents ok; logs under the work root's coordinator/scratch/gate/"
+  }
+}

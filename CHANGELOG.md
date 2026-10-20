@@ -6,6 +6,17 @@ the bare version.
 
 ## [Unreleased]
 
+### Changed
+
+- `tool_toolchain::executor::Executor` runs every planned argv through a `Runner` the caller
+  supplies (`Executor::with_runner`), with `b10x-tool-process`'s `Process` as the default
+  (`Executor::new`), so a local and a confined run share one executor. A runner receives each argv
+  with the provider's name, its declared sandbox (placeholders unexpanded) and the time left, and
+  answers a `RunOutput`; every check of the `build-test` contract stays the executor's and runs
+  before the runner is called. The local runner does not apply the sandbox. Breaking:
+  `Executor` takes a type parameter (defaulted), and `ResolvedProvider` gains a public `sandbox`
+  field, so a struct literal of it names the new field.
+
 ## [0.3.0] - 2026-10-20
 
 Wave w3: the build-test toolset with its executor on the process runner, and the search toolset.

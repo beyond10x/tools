@@ -16,7 +16,7 @@ scope:
   path: crates/tool-process/src/lib.rs
 - confidence: cited
   path: crates/tool-toolchain/src/executor.rs
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -47,3 +47,13 @@ not being applied; it was not run against the network.
 - A go scenario shows `GOSUMDB` (or the provider's declared variable) set in the child to the
   provider's value.
 - The go summaries are true of the run, or reworded where a value cannot be applied.
+
+## The runner seam (2026-10-20)
+
+`story:executor-runs-through-a-runner` hands each runner the provider's declared sandbox
+(`RunRequest::sandbox`, placeholders unexpanded), so a confined runner such as harness's applies it
+against its own mounts. The local `Process` runner still does not: the sandbox values move `HOME`,
+`PATH` and the toolchains onto mounts a local run does not have. What this story still owns is the
+local runner: which of the literal values (`GOSUMDB`, `GOTOOLCHAIN`, `GOENV`, `CGO_ENABLED`,
+`NPM_CONFIG_OFFLINE`, `YARN_ENABLE_NETWORK`) it can apply without relocating anything, and whether
+the go summaries are reworded for it.

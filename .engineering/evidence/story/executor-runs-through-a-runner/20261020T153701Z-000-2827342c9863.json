@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T15:37:01Z",
+  "actor": "human:timo",
+  "artifact": "story:executor-runs-through-a-runner",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p b10x-tool-toolchain --test runner; coordinator read of the executor diff",
+    "reference": "base e89380d has no Runner (new behaviour) vs treatment e69528a: tests/runner.rs 13 passed, a recording runner receives every argv with provider, sandbox and time left and is never called on a refusal; the implementor's measured red when the executor's program check was switched off (12 passed, 1 failed); conformance 44 of 44 and six mutant lanes unchanged"
+  }
+}
