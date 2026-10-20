@@ -1,0 +1,558 @@
+//! The runner's tests, ported from harness 0.14.1's `local.rs` `mod tests` and from the one run
+//! test in its `tests.rs`, adapted to the typed API with their assertions kept. Each names its
+//! program by name, not by a path a machine may not have, so none returns early and checks
+//! nothing. After them, the cases for what this crate added: the caller's own bound, the
+//! refusal names and the workspace checks.
+
+use std::collections::BTreeSet;
+use std::fs;
+use std::time::Instant;
+
+use serde_json::json;
+use tempfile::TempDir;
+use tool_contract::conformance::{Outcome, Toolset};
+
+use super::*;
+use crate::output::{Cut, drain, keep_both_ends};
+
+/// The two ends a run keeps of the whole stream `bytes`, `half` at each end, with the bytes
+/// beside each cut as the stream has them.
+fn ends_of(bytes: &[u8], half: usize) -> output::Drained {
+    let len = bytes.len();
+    keep_both_ends(
+        Cut {
+            head: &bytes[..half],
+            after_head: &bytes[half..(half + 3).min(len)],
+            before_tail: &bytes[(len - half).saturating_sub(3)..len - half],
+            tail: &bytes[len - half..],
+        },
+        len as u64,
+    )
+}
+
+fn workspace() -> TempDir {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp");
+    fs::create_dir_all(&base).expect("the scratch directory under target/ is made");
+    tempfile::tempdir_in(base).expect("a temporary directory")
+}
+
+fn running(root: &Path, programs: &[&str]) -> Process {
+    Process::new(root, programs.iter().map(|p| (*p).to_owned()).collect())
+        .expect("the workspace opens")
+}
+
+fn run(process: &Process, argv: &[&str]) -> RunOutput {
+    process
+        .run(&RunInput::argv(argv.iter().copied()), None)
+        .expect("the program runs")
+}
+
+#[test]
+fn a_declared_program_is_started_without_this_process_s_environment() {
+    // Cargo puts `CARGO_MANIFEST_DIR` in every test process, so it stands in here for every
+    // credential a real run holds while somebody else chooses a child's arguments.
+    assert!(std::env::var_os("CARGO_MANIFEST_DIR").is_some());
+    let inside = workspace();
+    let output = run(&running(inside.path(), &["env"]), &["env"]);
+    assert!(
+        !output.stdout.contains("CARGO_MANIFEST_DIR="),
+        "{}",
+        output.stdout
+    );
+    assert!(output.stdout.contains("PATH="), "{}", output.stdout);
+}
+
+#[test]
+fn a_program_is_bounded_by_what_the_run_has_left_and_the_result_says_so() {
+    let inside = workspace();
+    let process = running(inside.path(), &["sleep"]);
+
+    let started = Instant::now();
+    let output = process
+        .run(
+            &RunInput::argv(["sleep", "30"]),
+            Some(Duration::from_millis(200)),
+        )
+        .expect("the program starts");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the program was killed at the bound, not at its own end"
+    );
+    assert!(output.timed_out);
+    assert_eq!(output.timeout_ms, 200);
+
+    // No deadline is the crate's own ceiling, not a bound of nothing.
+    let output = run(&process, &["sleep", "0"]);
+    assert!(!output.timed_out);
+    assert_eq!(output.timeout_ms, MAX_RUN_SECONDS * 1000);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_timeout_kills_descendants_that_hold_the_output_pipes() {
+    let inside = workspace();
+    let process = running(inside.path(), &["sh"]);
+
+    let started = Instant::now();
+    let output = process
+        .run(
+            &RunInput::argv(["sh", "-c", "sleep 30 & wait"]),
+            Some(Duration::from_millis(200)),
+        )
+        .expect("the process group is stopped");
+    assert!(output.timed_out);
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "a descendant kept a pipe open after the direct child was killed"
+    );
+}
+
+#[test]
+fn output_over_the_cap_keeps_both_ends_and_the_marker_names_what_went_missing() {
+    // The tail is where a test suite's verdict is. Keeping the head alone handed a model the
+    // compiler's progress and dropped `test result: FAILED`.
+    let inside = workspace();
+    let output = run(&running(inside.path(), &["seq"]), &["seq", "1", "100000"]);
+    let stdout = &output.stdout;
+    assert!(output.truncated);
+    assert!(stdout.starts_with("1\n2\n3\n"), "the head survives");
+    assert!(
+        stdout.ends_with("\n99999\n100000\n"),
+        "and so does the tail"
+    );
+    let omitted = output.omitted_bytes;
+    assert!(omitted > 0);
+    assert!(
+        stdout.contains(&format!("… {omitted} bytes omitted here …")),
+        "and the marker names the count the result reports"
+    );
+    // 588,895 bytes in, 64 KiB out, and every byte accounted for in one of the three.
+    assert_eq!(
+        usize::try_from(omitted).expect("a byte count that fits") + stdout.len()
+            - format!("\n… {omitted} bytes omitted here …\n").len(),
+        588_895
+    );
+}
+
+#[test]
+fn the_two_ends_kept_of_an_oversized_stream_are_whole_characters_and_the_marker_counts_exactly() {
+    // On generated bytes, so it checks the arithmetic on every machine.
+    let body = "€".repeat(50_000);
+    let bytes = body.as_bytes();
+    let half = 1_000;
+    let cut = ends_of(bytes, half);
+
+    assert!(
+        !cut.text.contains('\u{fffd}'),
+        "a cut through a character would read as damage to the stream"
+    );
+    assert!(cut.text.starts_with(&"€".repeat(333)), "the head survives");
+    assert!(cut.text.ends_with(&"€".repeat(333)), "and so does the tail");
+    assert_eq!(
+        cut.omitted,
+        150_000 - 999 - 999,
+        "the bytes dropped for a character boundary are counted too"
+    );
+    let marker = format!("\n… {} bytes omitted here …\n", cut.omitted);
+    assert!(cut.text.contains(marker.trim()), "{}", cut.text);
+    assert_eq!(
+        cut.omitted + cut.text.len() as u64 - marker.len() as u64,
+        150_000,
+        "every byte is in the head, the tail or the marker's count"
+    );
+}
+
+#[test]
+fn a_stream_whose_two_ends_are_the_whole_of_it_keeps_its_last_line_and_writes_no_marker() {
+    let body = format!("{}test result: FAILED\n", "filler\n".repeat(100));
+    let bytes = body.as_bytes();
+    let cut = keep_both_ends(
+        Cut {
+            head: &bytes[..300],
+            after_head: &bytes[300..303],
+            before_tail: &bytes[297..300],
+            tail: &bytes[300..],
+        },
+        bytes.len() as u64,
+    );
+
+    assert_eq!(cut.omitted, 0);
+    assert_eq!(cut.text, body, "nothing was dropped, so nothing is marked");
+    assert!(cut.text.ends_with("test result: FAILED\n"));
+}
+
+#[test]
+fn a_caller_can_name_more_of_the_environment_and_only_what_it_named_crosses() {
+    // The same stand-in: cargo sets it in every test process, so letting it through by name is
+    // observable without setting anything in this process.
+    let inside = workspace();
+    let process = running(inside.path(), &["env"]).inheriting(["CARGO_MANIFEST_DIR"]);
+
+    let output = run(&process, &["env"]);
+    assert!(
+        output.stdout.contains("CARGO_MANIFEST_DIR="),
+        "{}",
+        output.stdout
+    );
+    assert!(
+        !output.stdout.contains("CARGO_PKG_NAME="),
+        "{}",
+        output.stdout
+    );
+}
+
+#[test]
+fn run_starts_a_declared_program_in_the_tree_and_nothing_else() {
+    let inside = workspace();
+    let process = running(inside.path(), &["sh"]);
+
+    let output = run(&process, &["sh", "-c", "pwd; exit 3"]);
+    assert_eq!(output.exit, Some(3), "the child's own code, not a verdict");
+    assert!(!output.timed_out);
+    assert!(
+        output.stdout.contains(
+            &inside
+                .path()
+                .canonicalize()
+                .expect("real")
+                .display()
+                .to_string()
+        ),
+        "the working directory is the workspace: {}",
+        output.stdout
+    );
+
+    let refused = process
+        .run(&RunInput::argv(["echo"]), None)
+        .expect_err("refused");
+    assert!(
+        refused
+            .to_string()
+            .contains("is not a program this run may start"),
+        "{refused}"
+    );
+    // The words are what the model reads; the name and fields beside them are what a reader of
+    // the record counts, and neither is derived from the other.
+    assert_eq!(refused.name(), "process.ProgramNotDeclared");
+    assert_eq!(
+        refused.fields(),
+        json!({"program": "echo", "declared": ["sh"]})
+    );
+}
+
+#[test]
+fn the_callers_own_bound_is_capped_by_the_maximum_and_by_what_the_run_has_left() {
+    let inside = workspace();
+    let process = running(inside.path(), &["sh"]);
+    let quick = RunInput::argv(["sh", "-c", "exit 0"]);
+
+    let asked = |input: RunInput, remaining| {
+        process
+            .run(&input, remaining)
+            .expect("the program runs")
+            .timeout_ms
+    };
+    assert_eq!(asked(quick.clone().within(5_000), None), 5_000);
+    assert_eq!(
+        asked(
+            quick.clone().within(5_000),
+            Some(Duration::from_millis(1_200))
+        ),
+        1_200,
+        "what the run has left is smaller, so it is the bound"
+    );
+    assert_eq!(
+        asked(quick.clone().within(700), Some(Duration::from_secs(60))),
+        700,
+        "the caller's own bound is smaller, so it is the bound"
+    );
+    assert_eq!(
+        asked(quick.within(u64::MAX), None),
+        MAX_RUN_SECONDS * 1000,
+        "an ask above the maximum is capped at it"
+    );
+}
+
+#[test]
+fn an_empty_argv_is_refused_and_an_empty_declared_set_starts_nothing() {
+    let inside = workspace();
+    let none = running(inside.path(), &[]);
+
+    let refused = none
+        .run(&RunInput::argv(Vec::<String>::new()), None)
+        .expect_err("refused");
+    assert_eq!(refused.name(), "process.EmptyArgv");
+
+    let refused = none
+        .run(&RunInput::argv(["sh", "-c", "printf x > marker.txt"]), None)
+        .expect_err("refused");
+    assert_eq!(
+        refused.fields(),
+        json!({"program": "sh", "declared": []}),
+        "{refused}"
+    );
+    assert!(refused.to_string().contains("none"), "{refused}");
+    assert!(!inside.path().join("marker.txt").exists());
+}
+
+#[test]
+fn a_workspace_that_does_not_open_is_refused_by_name() {
+    let inside = workspace();
+    let missing = Process::new(inside.path().join("missing"), Vec::new()).expect_err("refused");
+    assert_eq!(missing.name(), "process.WorkspaceUnavailable");
+
+    let file = inside.path().join("a.txt");
+    fs::write(&file, "a\n").expect("the file is written");
+    let not_a_directory = Process::new(&file, Vec::new()).expect_err("refused");
+    assert_eq!(not_a_directory.name(), "process.WorkspaceUnavailable");
+    assert_eq!(
+        not_a_directory.fields(),
+        json!({"path": file.display().to_string()})
+    );
+}
+
+#[test]
+fn a_workspace_removed_after_it_opened_is_named_and_not_read_as_a_missing_program() {
+    // Starting a child in a directory that is gone fails with the system's *no such file*,
+    // which reads as the program not being found. It is the workspace, and the refusal says so.
+    let inside = workspace();
+    let root = inside.path().join("gone");
+    fs::create_dir(&root).expect("the directory is made");
+    let process = running(&root, &["sh"]);
+    fs::remove_dir(&root).expect("the directory is removed");
+
+    let refused = process
+        .run(&RunInput::argv(["sh", "-c", "exit 0"]), None)
+        .expect_err("refused");
+    assert_eq!(refused.name(), "process.WorkspaceUnavailable", "{refused}");
+}
+
+#[test]
+fn a_declared_program_that_is_not_there_is_a_spawn_failure_naming_it() {
+    let inside = workspace();
+    let absent = "b10x-tool-process-absent-program";
+    let refused = running(inside.path(), &[absent])
+        .run(&RunInput::argv([absent]), None)
+        .expect_err("refused");
+    assert_eq!(refused.name(), "process.SpawnFailed");
+    assert_eq!(refused.fields(), json!({"program": absent}));
+}
+
+#[test]
+fn an_unknown_input_field_is_invalid_input() {
+    // Held here because the conformance runner refuses a `call.input` key the operation does not
+    // declare before any scenario runs.
+    let inside = workspace();
+    let outcome = running(inside.path(), &["sh"]).invoke(
+        "process.run",
+        &json!({"argv": ["sh", "-c", "exit 0"], "shell": true}),
+    );
+    let Outcome::Error { name, fields, .. } = outcome else {
+        panic!("an unknown field was accepted: {outcome:?}");
+    };
+    assert_eq!(name, "process.InvalidInput");
+    assert_eq!(fields, json!({}));
+}
+
+#[test]
+fn a_tail_that_opens_on_bytes_that_are_not_utf_8_is_not_eaten_up_to_the_first_character() {
+    // A cut can have broken one character, so at most three continuation bytes open the tail
+    // because of it. Ten in a row are the stream's own, and skipping them all dropped them from
+    // the reply and added them to the omitted count.
+    let head = vec![b'h'; 100];
+    let mut tail = vec![0x80_u8; 10];
+    tail.extend_from_slice(b"end\n");
+    let total = 1_000_u64;
+    let cut = keep_both_ends(
+        Cut {
+            head: &head,
+            after_head: b"xyz",
+            before_tail: b"xyz",
+            tail: &tail,
+        },
+        total,
+    );
+
+    assert!(cut.text.ends_with("end\n"), "{:?}", cut.text);
+    assert_eq!(
+        cut.omitted,
+        total - 100 - 14,
+        "the stream's own bytes are answered, not counted as omitted"
+    );
+    assert_eq!(
+        cut.text.matches('\u{fffd}').count(),
+        10,
+        "each one answered lossily: {:?}",
+        cut.text
+    );
+}
+
+#[test]
+fn a_four_byte_character_cut_at_any_of_its_bytes_leaves_whole_and_is_counted() {
+    // U+1D11E is four bytes, so the cuts at 1,000 to 1,003 bytes land at each offset inside one
+    // on both sides: the head's cut moves before it, the tail's past it, never through it.
+    let body = "\u{1d11e}".repeat(10_000);
+    let bytes = body.as_bytes();
+    for half in 1_000..1_004 {
+        let cut = ends_of(bytes, half);
+        assert!(
+            !cut.text.contains('\u{fffd}'),
+            "half {half}: {:?}",
+            &cut.text[..20]
+        );
+        let marker = format!("\n… {} bytes omitted here …\n", cut.omitted);
+        assert_eq!(
+            cut.omitted + cut.text.len() as u64 - marker.len() as u64,
+            40_000,
+            "half {half}: every byte is kept or counted"
+        );
+        assert_eq!(
+            cut.omitted % 4,
+            0,
+            "half {half}: whole characters left with the cut"
+        );
+    }
+}
+
+#[test]
+fn bytes_at_a_cut_that_are_not_utf_8_together_are_the_streams_own_and_stay() {
+    // 0xE0 0x80 0x80 has the shape of a three-byte character and is not one (an overlong
+    // encoding), so the cut through it broke no character: nothing moves and nothing extra is
+    // counted.
+    let mut bytes = vec![b'a'; 99];
+    bytes.extend_from_slice(&[0xe0, 0x80, 0x80]);
+    bytes.extend_from_slice(&[b'b'; 300]);
+    let cut = ends_of(&bytes, 100);
+    assert_eq!(cut.omitted, 402 - 200, "the head keeps its stray lead byte");
+    assert!(
+        cut.text
+            .starts_with(&format!("{}\u{fffd}\n…", "a".repeat(99))),
+        "{:?}",
+        &cut.text[95..110]
+    );
+}
+
+#[test]
+fn a_character_across_a_cut_where_fewer_than_three_bytes_left_the_tail_still_leaves_whole() {
+    // The bytes before the tail are then partly the head's own last ones, and the run's drain
+    // has to put the two together: one byte of `€` left the ring, one is the head's last and one
+    // opens the tail.
+    let half = MAX_RUN_OUTPUT_BYTES / 2;
+    let mut stream = vec![b'a'; half - 1];
+    stream.extend_from_slice("€".as_bytes());
+    stream.resize(2 * half + 1, b'z');
+    let drained = drain(stream.as_slice());
+
+    assert_eq!(drained.omitted, 3, "the whole of `€` and nothing else");
+    assert!(
+        !drained.text.contains('\u{fffd}'),
+        "{:?}",
+        &drained.text[half - 4..half + 30]
+    );
+    assert!(drained.text.ends_with(&"z".repeat(half - 1)));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_descendant_holding_the_output_is_bounded_by_what_the_run_has_left_too() {
+    let inside = workspace();
+    let process = running(inside.path(), &["sh"]);
+
+    let started = Instant::now();
+    let output = process
+        .run(
+            &RunInput::argv(["sh", "-c", "(sleep 3; printf late) & exit 5"]),
+            Some(Duration::from_millis(200)),
+        )
+        .expect("the program runs");
+    assert!(
+        started.elapsed() < Duration::from_millis(1_500),
+        "held {:?}: {output:?}",
+        started.elapsed()
+    );
+    assert!(output.timed_out, "{output:?}");
+    assert_eq!(
+        output.exit,
+        Some(5),
+        "the shell's own code: it ended by itself"
+    );
+    assert_eq!(output.timeout_ms, 200);
+    assert_eq!(output.stdout, "");
+}
+
+#[test]
+fn a_stream_is_read_to_its_end_past_the_cap_and_every_byte_is_counted() {
+    let body = vec![b'x'; 200_000];
+    let drained = drain(body.as_slice());
+    assert_eq!(drained.omitted, 200_000 - MAX_RUN_OUTPUT_BYTES as u64);
+    assert!(
+        drained
+            .text
+            .starts_with(&"x".repeat(MAX_RUN_OUTPUT_BYTES / 2))
+    );
+}
+
+#[test]
+fn every_error_the_crate_returns_is_declared_named_by_an_outcome_and_carries_its_fields() {
+    // The class, not one instance: every variant of [`ProcessError`] is built here, its name must
+    // be an error of `process.run` with exactly the declared fields, and every error the contract
+    // declares must be the name of some variant.
+    let io = || std::io::Error::other("refused");
+    let invalid = serde_json::from_value::<RunInput>(json!({})).expect_err("argv is missing");
+    let every = [
+        ProcessError::InvalidInput(invalid),
+        ProcessError::EmptyArgv,
+        ProcessError::ProgramNotDeclared {
+            program: "x".to_owned(),
+            declared: Vec::new(),
+        },
+        ProcessError::Workspace {
+            path: "w".to_owned(),
+            source: io(),
+        },
+        ProcessError::WorkspaceNotADirectory {
+            path: "w".to_owned(),
+        },
+        ProcessError::SpawnFailed {
+            program: "x".to_owned(),
+            source: io(),
+        },
+        ProcessError::WaitFailed {
+            program: "x".to_owned(),
+            source: io(),
+        },
+    ];
+    let contract = contract();
+    let run = contract.operation("process.run").expect("declared");
+    for error in &every {
+        let name = error.name();
+        assert!(ProcessError::NAMES.contains(&name), "{name}");
+        assert!(
+            run.names_error(name),
+            "{name} is not an outcome of process.run"
+        );
+        let declared: BTreeSet<&str> = contract
+            .error_decl(name)
+            .expect("declared")
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect();
+        let returned: BTreeSet<String> = error
+            .fields()
+            .as_object()
+            .expect("an object")
+            .keys()
+            .cloned()
+            .collect();
+        let returned: BTreeSet<&str> = returned.iter().map(String::as_str).collect();
+        assert_eq!(returned, declared, "{name}");
+    }
+    let returned: BTreeSet<&str> = every.iter().map(ProcessError::name).collect();
+    let declared: BTreeSet<&str> = contract.errors.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(returned, declared);
+    assert_eq!(
+        ProcessError::NAMES.iter().copied().collect::<BTreeSet<_>>(),
+        declared
+    );
+}

@@ -1,0 +1,76 @@
+format: tool-conformance/1
+toolset: process
+version: v1alpha1
+scenarios:
+  - name: a-declared-program-runs-in-the-workspace-root-and-its-effects-land-there
+    holds: [effects, subjects, bounds, output]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "printf made > made.txt; printf done"]
+    expect:
+      outcome: ok
+      output:
+        argv: [sh, -c, "printf made > made.txt; printf done"]
+        exit: 0
+        stdout: done
+        stderr: ""
+        truncated: false
+        omitted_bytes: 0
+        timed_out: false
+        timeout_ms: 600000
+      files:
+        made.txt: {equals: made}
+  - name: a-non-zero-exit-is-a-result-with-both-streams
+    holds: [output]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "printf out; printf err >&2; exit 3"]
+    expect:
+      outcome: ok
+      output:
+        exit: 3
+        stdout: out
+        stderr: err
+        truncated: false
+        omitted_bytes: 0
+        timed_out: false
+  - name: a-second-run-of-the-same-argv-acts-again
+    holds: [idempotency, effects]
+    fixture:
+      files: {log.txt: "x\n"}
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "printf 'x\\n' >> log.txt"]
+    expect:
+      outcome: ok
+      output: {exit: 0}
+      files:
+        log.txt: {equals: "x\nx\n"}
+  - name: the-output-is-what-the-program-found-when-it-ran
+    holds: [determinism]
+    fixture:
+      files: {state.txt: "seen\n"}
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "read -r line < state.txt; printf '%s' \"$line\""]
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: seen
+      files:
+        state.txt: unchanged
+  - name: the-program-has-no-standard-input
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "if read -r line; then printf 'read %s' \"$line\"; else printf eof; fi"]
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: eof

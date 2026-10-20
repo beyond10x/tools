@@ -1,0 +1,39 @@
+format: tool-conformance/1
+toolset: process
+version: v1alpha1
+scenarios:
+  - name: the-child-sees-no-variable-outside-the-allow-list
+    holds: [effects]
+    call:
+      operation: process.run
+      input:
+        argv:
+          - sh
+          - -c
+          - |-
+            env | while IFS='=' read -r name value; do
+              case "$name" in
+                PATH|HOME|LANG|LC_ALL|TERM|TMPDIR) ;;
+                CARGO_HOME|RUSTUP_HOME|RUSTUP_TOOLCHAIN|CARGO_TARGET_DIR) ;;
+                SSL_CERT_FILE|SSL_CERT_DIR) ;;
+                PWD|OLDPWD|SHLVL|_) ;;
+                *) printf '%s\n' "$name" ;;
+              esac
+            done
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: ""
+        stderr: ""
+  - name: a-variable-on-the-allow-list-crosses
+    holds: [effects]
+    call:
+      operation: process.run
+      input:
+        argv: [sh, -c, "printf '%s' \"${PATH:+set}\""]
+    expect:
+      outcome: ok
+      output:
+        exit: 0
+        stdout: set
