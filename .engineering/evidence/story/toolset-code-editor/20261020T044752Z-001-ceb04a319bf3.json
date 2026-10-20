@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T04:47:52Z",
+  "actor": "human:timo",
+  "artifact": "story:toolset-code-editor",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p b10x-tool-code-editor --locked run by the coordinator in tree impl-toolset-code-editor after correction round 2",
+    "reference": "wave root coordinator/scratch/verify-code-editor.log: 23 unit, 7 plus 2 adversary, 1 conformance lane over 68 scenarios, 2 mutant lanes, exit 0; a stale expected_sha256 and an overlapping patch are refused with the file unchanged (scenarios edit-a-stale-digest..., patch-overlapping-edits...); base 796937c has no such crate"
+  }
+}

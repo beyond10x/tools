@@ -206,8 +206,11 @@ scenarios:
       files: {a.txt: unchanged}            # unchanged | absent | {equals: text} | {sha256: hex}
 ```
 
-Every profile property in the document has at least one scenario whose `holds` names it; the
-runner refuses a suite where one has none. Each implementation crate also runs the suite against
+Every behavioural profile property an operation declares (`effects`, `idempotency`,
+`determinism`, `bounds`, `paging`, `preconditions`, `subjects`, `output`) has at least one
+scenario whose `holds` names it; the runner refuses a suite where one has none. The declarative
+properties (`risk`, `consequences`, `requires`, `placement`, `capability`) are the validator's
+alone. Each implementation crate also runs the suite against
 its own **mutants** (a build of the implementation with one property switched off, behind
 `#[cfg(any(test, feature = "mutants"))]`) and asserts that each mutant fails at least one
 scenario. That is how "a scenario that fails when an implementation ignores it" is a test rather
@@ -217,7 +220,7 @@ than a sentence.
 
 | crate | package | holds |
 |---|---|---|
-| `crates/tool-contract` | `b10x-tool-contract` | the profile types, the document parser, the validator, the `tool-conformance/1` runner, the schema shape check, the `tool-contract` binary (`validate`, `conform`) |
+| `crates/tool-contract` | `b10x-tool-contract` | the profile types, the document parser, the validator, the `tool-conformance/1` runner, the schema shape check, the `tool-contract` binary (`validate`; suites run inside each toolset crate's tests) |
 | `crates/tool-fs` | `b10x-tool-fs` | `fs.read`, `fs.list`, `fs.glob`, `fs.stat` over one workspace root |
 | `crates/tool-code-editor` | `b10x-tool-code-editor` | `code.write`, `code.edit`, `code.patch`, `code.move`, `code.delete` over one workspace root |
 | `crates/tool-toolchain` | `b10x-tool-toolchain` | the declarative toolchain registry (rust, go, taskfile, npm, yarn) and the `build-test` operations it derives |
@@ -233,9 +236,10 @@ pub trait Toolset {
 }
 ```
 
-The runner (`tool_contract::conformance::run(suite, |root| make_toolset(root))`) creates one
-temporary workspace per scenario under the caller's scratch root, lays out the fixture, invokes,
-matches, and reports one line per scenario plus a summary with exit status. The schema check maps
+The runner (`tool_contract::conformance::run(&suite, &contract, scratch_root, |workspace| make_toolset(workspace))`;
+`contracts/profile/tool-contract-1.md` is the authority for the exact signature) creates one
+workspace per scenario under the caller's scratch root, lays out the fixture, invokes, matches, and
+reports one line per scenario plus a summary with exit status. The schema check maps
 both the contract's field lists and the `schemars`-derived schemas to one canonical shape
 (`String`, `Integer`, `Boolean`, `Optional`, `List`, `Map`, `Struct`, `Enum`) and refuses on the
 first difference, naming the operation, the side and the field.

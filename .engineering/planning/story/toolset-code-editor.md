@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:toolset-code-editor
 kind: story
-status: active
+status: implemented
 title: The code-editor toolset has a contract, a conformance suite and a default implementation
 relations:
 - decomposes: epic:tool-contracts
@@ -14,10 +14,11 @@ scope:
   path: contracts/code-editor/v1alpha1
 - confidence: cited
   path: crates/tool-code-editor
-revision: 6
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-20T01:52:29Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-20T01:54:15Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-20T05:03:56Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 
@@ -38,10 +39,14 @@ edits resolved against the original file with overlaps refused (P1, P2), a unifi
 
 ## Scope
 
-- `contracts/code-editor/v1alpha1/` (new): `contract.yaml`, `semantics.md`, `scenarios/`, `fixtures/`
-- `crates/tool-code-editor/` (new): the implementation, its unit tests ported from harness, the
-  conformance test that runs the suite, the mutant tests
-- `Cargo.lock` (shared with the other crates of the wave; regenerated at merge)
+- `contracts/code-editor/v1alpha1/` (new, cited): `contract.yaml` (family `code`), `semantics.md`,
+  `scenarios/` (8 files, 68 scenarios, 3 of them `adversary-*`), `fixtures/` (`link-to-parent/`,
+  `dangling-link/`, `link-inside/`, with committed symlinks)
+- `crates/tool-code-editor/` (new, cited): `src/{lib,tests}.rs`,
+  `tests/{conformance,mutants,adversary_trailing_slash,adversary_pass2}.rs`
+- `Cargo.lock` (cited; shared with the other crates of the wave, regenerated at merge)
+
+Confirmed by the implementor on 2026-10-20: every cited path exists as named; no inferred line.
 
 ## Acceptance
 

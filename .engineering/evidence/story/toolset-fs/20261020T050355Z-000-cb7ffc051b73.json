@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T05:03:55Z",
+  "actor": "human:timo",
+  "artifact": "story:toolset-fs",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the six gate steps of Taskfile check run one by one on wave/t1 at 15f367e035f00dcc6e8235f7443940bf4ccb3615 (aep validate, cargo test --workspace --locked, cargo fmt --all --check, cargo clippy --workspace --all-targets --locked -D warnings, cargo +1.98.0 check --workspace --locked, tool-contract validate contracts/)",
+    "reference": "every step exit 0; 28 test lanes, 195 tests passed, 0 failed; both contract documents ok; logs under the wave root coordinator/scratch/gate2/"
+  }
+}

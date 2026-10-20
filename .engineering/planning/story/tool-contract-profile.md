@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tool-contract-profile
 kind: story
-status: active
+status: implemented
 title: The tool-contract/1 profile is written down and validated
 relations:
 - decomposes: epic:tool-contracts
@@ -19,10 +19,11 @@ scope:
   path: contracts/profile/tool-contract-1.md
 - confidence: cited
   path: crates/tool-contract
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-20T01:52:29Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-20T01:54:15Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-10-20T05:03:56Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 
@@ -42,14 +43,18 @@ the ESS field and type grammar itself. The repository had no Rust workspace befo
 
 ## Scope
 
-- `Cargo.toml` (new): the workspace, `members = ["crates/*"]`, rust-version 1.98, edition 2024,
-  `unsafe_code = "forbid"`, clippy `all` and `pedantic` denied
-- `Cargo.lock` (new)
-- `contracts/profile/tool-contract-1.md` (new)
-- `crates/tool-contract/` (new): profile types, document parser, validator, conformance runner,
-  schema shape, `tool-contract` binary with `validate <dir>` and `conform <contract-dir> --impl <name>`
-- `Taskfile.yml`: `check` gains the cargo steps and `tool-contract validate contracts/`
-- `.github/workflows/check.yml`: a Rust toolchain step
+- `Cargo.toml` (new, cited): the workspace, `members = ["crates/*"]`, rust-version 1.98, edition
+  2024, no workspace licence (per crate), `unsafe_code = "forbid"`, clippy `all` and `pedantic`
+  denied
+- `Cargo.lock` (new, cited; regenerated at the last unit merge)
+- `contracts/profile/tool-contract-1.md` (new, cited)
+- `crates/tool-contract/` (new, cited): `src/{lib,document,validate,types,conformance,mutants,digest}.rs`,
+  `src/bin/tool-contract.rs`, `tests/{validate,shapes,conformance,cli,error_fields,adversary_*,adversary2_*}.rs`,
+  `tests/defects/*.yaml`, `tests/fixtures/notes/`
+- `Taskfile.yml` (cited): `check` gained the cargo steps, the msrv check and `tool-contract validate`
+- `.github/workflows/check.yml` (cited): pinned Rust toolchain and cache steps
+
+Confirmed by the implementor on 2026-10-20: every cited path exists as named; no inferred line.
 
 ## Acceptance
 

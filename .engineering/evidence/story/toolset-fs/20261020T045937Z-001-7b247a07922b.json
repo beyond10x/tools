@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T04:59:37Z",
+  "actor": "human:timo",
+  "artifact": "story:toolset-fs",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p b10x-tool-fs --locked run by the coordinator in tree impl-toolset-fs after correction round 2",
+    "reference": "wave root coordinator/scratch/verify-fs.log: 28 unit, 6 adversary, 2 conformance lanes over 70 scenarios, 6 mutant lanes (five mutants each killed by the suite), exit 0; base 796937c has no such crate"
+  }
+}

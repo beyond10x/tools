@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:toolset-toolchain
 kind: story
-status: active
+status: implemented
 title: The toolchain registry moves from harness and derives build-test operations under the profile
 relations:
 - decomposes: epic:tool-contracts
@@ -12,10 +12,11 @@ scope:
   path: Cargo.lock
 - confidence: cited
   path: crates/tool-toolchain
-revision: 4
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-20T01:52:30Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-20T01:54:15Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-20T05:03:56Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":2}}}
 ---
 ## Outcome
 
@@ -24,8 +25,9 @@ transitions:
 0.13.3 (`798325f`), with its tests. Every `ResolvedTool` derives one `build-test.<tool>` operation
 under the `tool-contract/1` profile (effects `process`, plus `write` when the tool declares
 `workspace-writes`; `requires.binaries` from `sandbox.programs`, `requires.env` from `sandbox.env`;
-`subjects` from `writes` parameters and `argv[0]`; `placement` from the sandbox), and the five
-built-in providers' derived operations pass `tool_contract::validate`.
+`subjects` from `writes` parameters; the programs a tool starts are `requires.binaries`, since a
+subject must be an input field and `argv[0]` is a literal; `placement` from the sandbox), and the
+five built-in providers' derived operations pass `tool_contract::validate`.
 
 ## Context
 
@@ -39,9 +41,13 @@ per workspace (which providers match, which task names exist). That static contr
 
 ## Scope
 
-- `crates/tool-toolchain/` (new): `src/lib.rs` and `builtins/` from harness, `src/contract.rs`
-  (the derivation), tests
-- `Cargo.lock` (shared with the other crates of the wave; regenerated at merge)
+- `crates/tool-toolchain/` (new, cited): `src/lib.rs` (harness `798325f` with three documented
+  changes) and `builtins/{rust,go,taskfile,npm,yarn}.yaml` (byte-identical to harness),
+  `src/contract.rs` (the derivation), `tests/adversary_contract.rs`
+- `Cargo.lock` (cited; shared with the other crates of the wave, regenerated at merge)
+
+Confirmed by the implementor on 2026-10-20: every cited path exists as named; no inferred line.
+Nothing under `contracts/`: the static `build-test` contract is `story:build-test-contract`.
 
 ## Acceptance
 

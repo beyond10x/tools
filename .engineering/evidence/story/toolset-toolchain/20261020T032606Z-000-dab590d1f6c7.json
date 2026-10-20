@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-20T03:26:06Z",
+  "actor": "human:timo",
+  "artifact": "story:toolset-toolchain",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "diff of crates/tool-toolchain/src/lib.rs and cmp of builtins/*.yaml against the harness 0.13.3 snapshot, in tree impl-toolset-toolchain before merge",
+    "reference": "docs/plans/wave-t1.md stage log 06:40: lib.rs differs by the crate rustdoc and pub mod contract only; five builtins byte-identical; licence LicenseRef-B10x-Proprietary; base 796937c has no such crate"
+  }
+}
