@@ -1,0 +1,25 @@
+format: tool-contract/1
+toolset: notes
+version: v1alpha1
+summary: "Seeded defect: notes.read declares output_bytes with a default and no max."
+operations:
+  - name: notes.read
+    summary: Read a file.
+    input:
+      - {name: path, type: String}
+    output:
+      - {name: text, type: String}
+    outcomes:
+      - {name: read, summary: The file is answered.}
+    profile:
+      effects: [read]
+      risk: low
+      idempotency: idempotent
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+        output_bytes: {default: 65536}
+      subjects:
+        - {field: path, kind: path}
+      placement: local
+      capability: workspace.read

@@ -1,0 +1,25 @@
+format: tool-contract/1
+toolset: notes
+version: v1alpha1
+summary: "Seeded defect: notes.write declares effects [write] and risk none, under the floor low."
+operations:
+  - name: notes.write
+    summary: Write a file whole.
+    input:
+      - {name: path, type: String}
+      - {name: text, type: String}
+    output:
+      - {name: path, type: String}
+    outcomes:
+      - {name: written, summary: The file holds text.}
+    profile:
+      effects: [write]
+      risk: none
+      idempotency: idempotent
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      subjects:
+        - {field: path, kind: path}
+      placement: local
+      capability: workspace.write

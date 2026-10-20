@@ -1,0 +1,63 @@
+format: tool-conformance/1
+toolset: notes
+version: v1alpha1
+scenarios:
+  - name: a-window-is-answered-with-the-whole-files-digest
+    holds: [paging, bounds, effects, idempotency, determinism, output]
+    fixture:
+      files: {a.txt: "one\ntwo\nthree\n"}
+    call: {operation: notes.read, input: {path: a.txt, offset: 2, limit: 1}}
+    expect:
+      outcome: ok
+      output:
+        path: {$any: true}
+        text: {$contains: two}
+        lines: {from: 2, to: 2, total: 3}
+        truncated: true
+        sha256: {$sha256_of: a.txt}
+        kind: file
+        note: {$absent: true}
+      files: {a.txt: unchanged}
+  - name: a-missing-file-is-not-found
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/one-note
+    call: {operation: notes.read, input: {path: missing.txt}}
+    expect:
+      error: notes.NotFound
+      output: {path: missing.txt}
+      files: {a.txt: unchanged, missing.txt: absent}
+  - name: a-stale-digest-leaves-the-file-unchanged
+    holds: [preconditions, subjects, effects, idempotency, determinism, bounds, output]
+    fixture:
+      files: {a.txt: "old\n"}
+    call:
+      operation: notes.write
+      input:
+        path: a.txt
+        text: "new\n"
+        expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+        labels: {}
+        tags: []
+    expect:
+      error: notes.PreconditionFailed
+      output:
+        expected: "0000000000000000000000000000000000000000000000000000000000000000"
+        actual: {$sha256_of: a.txt}
+      files: {a.txt: {equals: "old\n"}}
+  - name: a-write-answers-the-digest-of-what-it-wrote
+    holds: [effects, output]
+    fixture:
+      files: {a.txt: "old\n"}
+    call:
+      operation: notes.write
+      input: {path: a.txt, text: "new\n", labels: {kind: note}, tags: [draft]}
+    expect:
+      outcome: ok
+      output:
+        path: {$min_len: 1}
+        bytes: 4
+        sha256: {$sha256_of: a.txt}
+      files:
+        a.txt: {equals: "new\n"}
+        b.txt: absent
