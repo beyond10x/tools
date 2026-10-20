@@ -6,6 +6,11 @@ the bare version.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-20
+
+The build-test executor behind a runner seam, so harness runs local and confined toolchain plans
+through one executor (atlas ADR 0097 point 3). harness pins this tag.
+
 ### Changed
 
 - `tool_toolchain::executor::Executor` runs every planned argv through a `Runner` the caller
