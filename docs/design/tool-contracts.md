@@ -98,6 +98,182 @@ drift visible.
 | phase | work |
 |---|---|
 | T0 | this repository, its store, atlas ADR 0095 and catalog entry |
-| T1 | the `tool-contract/1` profile and its validator; `fs` and `code-editor` contracts with suites; `crates/tool-fs`, `crates/tool-code-editor` passing them |
+| T1 | the `tool-contract/1` profile and its validator; `fs` and `code-editor` contracts with suites; `crates/tool-fs`, `crates/tool-code-editor` passing them; `crates/tool-toolchain` from harness-toolchain |
 | T2 | harness, metaharness and takt adopt T1 |
 | T3 | the remaining toolsets in the order above; the other adopters |
+
+## T1 in detail (2026-10-20)
+
+Decided by the owner on 2026-10-20 (atlas ADR 0097): harness is kept, and `harness-tools`
+(6,049 lines) and `harness-toolchain` (1,952 lines) move into this repository as crates under the
+`tool-contract/1` profile; harness and metaharness then consume them. T1 therefore starts from
+harness's code, not from empty crates. Every crate records the harness file it came from in its
+crate documentation and in the table below.
+
+### The contract document
+
+`contracts/<toolset>/<version>/contract.yaml` is one `tool-contract/1` document. Its commands are
+ESS-shaped (the same `input`, `outcomes`, `errors` and type vocabulary an ESS domain uses) so that a
+later version can be lifted into an ESS domain unchanged; see *ESS validation* below for why it is
+not an ESS domain today.
+
+```yaml
+format: tool-contract/1
+toolset: fs                       # the family; every operation is named <toolset>.<op>
+version: v1alpha1
+summary: one paragraph
+types:                            # ESS-shaped named types, used by input, output and errors
+  - name: fs.Kind
+    kind: enum
+    variants: [file, directory, symlink, other]
+errors:                           # ESS-shaped: a name and typed fields
+  - name: fs.NotFound
+    summary: ...
+    fields: [{name: path, type: String}]
+operations:
+  - name: fs.read
+    summary: one line a reader chooses between operations by
+    guidance: how to call it well; separate from summary (presentation)
+    renderings: {claude: Read, codex: read_file, mcp: fs_read}   # generated names, never the source
+    input:                        # ESS field list; types: String, Integer, Boolean, Bytes,
+      - name: path                #   Optional<T>, List<T>, Map<K, V>, a named type
+        type: String
+        description: ...
+    output:                       # the same field list shape
+      - name: text
+        type: String
+    outcomes:                     # every error an operation can return is an outcome naming it
+      - name: read
+        summary: ...
+      - name: not-found
+        error: fs.NotFound
+    profile:
+      effects: [read]                                     # read write process network secret external human-visible
+      consequences: []                                    # money delete send-external irreversible sensitive-data
+      risk: low                                           # none low medium high critical; never under the floor its effects set
+      idempotency: idempotent                             # idempotent | keyed | non-idempotent
+      preconditions: []                                   # field names of the input that are preconditions
+      determinism: deterministic                          # deterministic | nondeterministic
+      bounds:                                             # every bound names default and max; max is required
+        timeout_ms: {default: 10000, max: 60000}
+        output_bytes: {default: 65536, max: 262144}
+      paging: {offset: offset, limit: limit, truncated: truncated, digest: sha256}   # input, input, output, output fields
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:                                           # input fields that name what a call touches
+        - {field: path, kind: path, pattern: "fs.read({path})"}
+      placement: local                                    # local | confined | container
+      capability: workspace.read                          # a Canon capability id: dotted lowercase segments
+      output: {untrusted: true, failure_as_result: true}
+```
+
+The profile's rules, which the validator enforces and `contracts/profile/tool-contract-1.md`
+states in full:
+
+| rule | refused when |
+|---|---|
+| risk floor | `risk` is under the floor set by effects and consequences: read→none, network→low, write→low, human-visible→low, process→medium, secret→medium, external→high; delete→medium, sensitive-data→medium, irreversible→high, money→high, send-external→high |
+| bounds | a bound lacks `max`, or `default` exceeds `max`, or `timeout_ms` is missing |
+| subjects | a subject names an input field that does not exist |
+| preconditions, paging | a named field does not exist on the side (input or output) the property reads |
+| capability | not `[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+` |
+| names | an operation is not `<toolset>.<op>`, or two operations share a name, or a rendering is reused |
+| outcomes | an error an outcome names is not declared, or a declared error no outcome names |
+| types | a field names a type that is neither primitive nor declared |
+
+Each rule names the operation and the property in its refusal.
+
+### The conformance suite
+
+`contracts/<toolset>/<version>/scenarios/*.yaml` are `tool-conformance/1` documents. A scenario
+lays out a fixture tree, calls one operation and checks the result and the tree afterwards:
+
+```yaml
+format: tool-conformance/1
+toolset: fs
+version: v1alpha1
+scenarios:
+  - name: a-window-is-answered-with-the-whole-files-digest
+    holds: [paging, bounds]            # the profile properties this scenario is evidence for
+    fixture:
+      files: {a.txt: "one\ntwo\nthree\n"}   # or dir: fixtures/<name>
+    call: {operation: fs.read, input: {path: a.txt, offset: 2, limit: 1}}
+    expect:
+      outcome: ok                          # or error: fs.NotFound
+      output:                              # subset match; matchers: {$sha256_of: a.txt}, {$any: true},
+        lines: {from: 2, to: 2, total: 3}  #   {$contains: text}, {$min_len: n}, {$absent: true}
+        truncated: true
+        sha256: {$sha256_of: a.txt}
+      files: {a.txt: unchanged}            # unchanged | absent | {equals: text} | {sha256: hex}
+```
+
+Every profile property in the document has at least one scenario whose `holds` names it; the
+runner refuses a suite where one has none. Each implementation crate also runs the suite against
+its own **mutants** (a build of the implementation with one property switched off, behind
+`#[cfg(any(test, feature = "mutants"))]`) and asserts that each mutant fails at least one
+scenario. That is how "a scenario that fails when an implementation ignores it" is a test rather
+than a sentence.
+
+### The crates and the runner
+
+| crate | package | holds |
+|---|---|---|
+| `crates/tool-contract` | `b10x-tool-contract` | the profile types, the document parser, the validator, the `tool-conformance/1` runner, the schema shape check, the `tool-contract` binary (`validate`, `conform`) |
+| `crates/tool-fs` | `b10x-tool-fs` | `fs.read`, `fs.list`, `fs.glob`, `fs.stat` over one workspace root |
+| `crates/tool-code-editor` | `b10x-tool-code-editor` | `code.write`, `code.edit`, `code.patch`, `code.move`, `code.delete` over one workspace root |
+| `crates/tool-toolchain` | `b10x-tool-toolchain` | the declarative toolchain registry (rust, go, taskfile, npm, yarn) and the `build-test` operations it derives |
+
+An implementation exposes typed input and output structs (`serde` + `schemars`) and one
+`tool_contract::Toolset` implementation:
+
+```rust
+pub trait Toolset {
+    fn contract(&self) -> &Contract;                         // the parsed document it claims
+    fn schemas(&self) -> Vec<(String, Schema, Schema)>;      // per operation: derived input, output
+    fn invoke(&self, operation: &str, input: &Value) -> Outcome;   // Ok(Value) | Error { name, message, fields }
+}
+```
+
+The runner (`tool_contract::conformance::run(suite, |root| make_toolset(root))`) creates one
+temporary workspace per scenario under the caller's scratch root, lays out the fixture, invokes,
+matches, and reports one line per scenario plus a summary with exit status. The schema check maps
+both the contract's field lists and the `schemars`-derived schemas to one canonical shape
+(`String`, `Integer`, `Boolean`, `Optional`, `List`, `Map`, `Struct`, `Enum`) and refuses on the
+first difference, naming the operation, the side and the field.
+
+### Operation sets
+
+| operation | input | output | from harness |
+|---|---|---|---|
+| `fs.read` | `path`, `offset?`, `limit?`, `max_bytes?` | `path`, `bytes`, `text` (numbered lines), `lines{from,to,total?}`, `truncated`, `truncated_lines`, `sha256?`, `lines_counted_to?`, `note?` | `local.rs` `read`, plus the whole-file digest |
+| `fs.list` | `path?` | `path`, `entries[{name,kind,bytes?}]`, `truncated` | `local.rs` `list` |
+| `fs.glob` | `glob`, `path?`, `max_results?` | `paths`, `truncated`, `depth_bound_reached` | `local.rs` `find_paths`, `walk`, `PathGlob` |
+| `fs.stat` | `path` | `path`, `kind`, `bytes?`, `sha256?` | new |
+| `code.write` | `path`, `text`, `expected_sha256?` | `path`, `bytes`, `sha256` | `local.rs` `write`, `resolve_new` |
+| `code.edit` | `path`, `old`, `new`, `expected_sha256?` | `path`, `bytes`, `sha256`, `diff` | `local.rs` `edit` (exactly one match) |
+| `code.patch` | `path`, `edits[{old,new}]`, `expected_sha256?` | `path`, `bytes`, `sha256`, `diff`, `applied` | new; every edit resolved against the original, overlaps refused |
+| `code.move` | `from`, `to` | `from`, `to` | new |
+| `code.delete` | `path`, `expected_sha256?` | `path` | new |
+
+`sha256` is the digest of the **whole** file; on a read whose line scan stopped at the 16 MiB
+counting bound it is `null`, like `lines.total`. A precondition that does not match refuses with
+`code.PreconditionFailed{expected, actual}` and the file unchanged.
+
+### Provenance
+
+| harness file | lines | goes to |
+|---|---|---|
+| `crates/harness-tools/src/local.rs` | read, list, find, walk, line reader, containment | `tool-fs` |
+| `crates/harness-tools/src/local.rs` | write, edit, `resolve_new` | `tool-code-editor` |
+| `crates/harness-tools/src/local.rs` | `grep`, `exec`, `drain`, output caps | stays until the `search` and `process` toolsets (T3; draft stories) |
+| `crates/harness-tools/src/catalogue.rs`, `verbs.rs`, `flat.rs`, `scope.rs`, `toolchain.rs`, `operations.rs` | the publication over `harness-wire` | stays in harness; T2 rewires it over these crates |
+| `crates/harness-toolchain/src/lib.rs`, `builtins/*.yaml` | all | `tool-toolchain` |
+
+### ESS validation
+
+`ess specify validate` (ess 0.60.0) refuses a command whose success outcome emits no event
+(`ESS-COMMAND-007 empty_change`) and a command whose outcomes carry no `when` (`ESS-COMMAND-004
+conflicting_declaration`); both were observed on 2026-10-20 against a one-command probe domain. A
+tool operation's outcome is decided by the filesystem, not by its input, and emits no domain event,
+so the T1 contract documents are validated by `tool-contract validate`, which reads the ESS field
+and type grammar itself. Lifting the documents into ESS domains, with events per operation, is a
+separate story once ESS can express an outcome decided outside the input.
