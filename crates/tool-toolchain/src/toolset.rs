@@ -12,7 +12,7 @@ use tool_contract::conformance::{Outcome, Toolset};
 use tool_process::RunOutput;
 
 use crate::contract::operation_name;
-use crate::executor::{Executor, RunError, Runs};
+use crate::executor::{Executor, RunError, Runner, Runs};
 use crate::{ParameterKind, Registry, resolve_tool};
 
 /// The `build-test` v1alpha1 contract document, `contracts/build-test/v1alpha1/contract.yaml`,
@@ -71,7 +71,7 @@ fn builtin_schemas() -> Vec<(String, Schema, Schema)> {
     schemas
 }
 
-impl Toolset for Executor {
+impl<R: Runner> Toolset for Executor<R> {
     fn contract(&self) -> &Contract {
         document()
     }
@@ -103,7 +103,7 @@ impl Toolset for Executor {
     }
 }
 
-impl Executor {
+impl<R> Executor<R> {
     fn not_resolved(&self, operation: &str) -> String {
         let resolved: Vec<&str> = self
             .providers()

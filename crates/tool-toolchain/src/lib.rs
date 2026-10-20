@@ -1,11 +1,14 @@
 //! Declarative toolchain providers, resolved without executing a probe, and the executor that
 //! runs what they plan. This crate is harness's `crates/harness-toolchain` at `798325f` (harness
-//! 0.13.3), moved here with five changes: this paragraph; `pub mod contract;`, where [`contract`]
+//! 0.13.3), moved here with six changes: this paragraph; `pub mod contract;`, where [`contract`]
 //! derives the `build-test` operations its resolved tools publish under the `tool-contract/1`
-//! profile; `pub mod executor;`, `mod toolset;` and the re-export of [`document`] and
-//! [`DOCUMENT_YAML`], where [`executor`] runs a planned operation through `b10x-tool-process`
-//! (ported from harness 0.14.1's `harness-tools`; its documentation names what moved and how it
-//! differs) and is the `build-test` v1alpha1 conformance toolset; [`ResolvedProvider::plan`]
+//! profile; `pub mod executor;`, `mod toolset;` and the re-exports of [`document`],
+//! [`DOCUMENT_YAML`], [`Runner`], [`RunRequest`] and [`RunOutput`], where [`executor`] runs a
+//! planned operation through a [`Runner`], `b10x-tool-process`'s by default (ported from harness
+//! 0.14.1's `harness-tools`; its documentation names what moved and how it differs), and is the
+//! `build-test` v1alpha1 conformance toolset; [`ResolvedProvider::sandbox`], the provider's
+//! sandbox as declared, which the executor hands the runner with each argv;
+//! [`ResolvedProvider::plan`]
 //! falling back to [`ResolvedProvider::tool_for`] when no tool carries the exact name, so that
 //! a published operation name plans the tool it was derived from; and, in `validate_arguments`,
 //! a value or list item that begins with `-` refused for every kind but `boolean`, unless every
@@ -22,6 +25,8 @@ pub mod contract;
 pub mod executor;
 mod toolset;
 
+pub use executor::{RunRequest, Runner};
+pub use tool_process::RunOutput;
 pub use toolset::{DOCUMENT_YAML, document};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -342,6 +347,10 @@ pub struct ResolvedProvider {
     pub roots: Vec<ResolvedRoot>,
     pub env: BTreeMap<String, String>,
     pub programs: Vec<String>,
+    /// The sandbox as the specification declares it: its programs, and its environment with the
+    /// `{workspace}` and `{mount:…}` placeholders unexpanded, where [`ResolvedProvider::env`]
+    /// expands them. A [`Runner`] receives it with each argv this provider plans.
+    pub sandbox: SandboxSpec,
     pub facts: Vec<ResolvedFact>,
     pub tools: Vec<ResolvedTool>,
     pub provenance: Provenance,
@@ -1191,6 +1200,7 @@ fn resolve_provider(
         roots,
         env,
         programs: declared.spec.sandbox.programs.clone(),
+        sandbox: declared.spec.sandbox.clone(),
         facts,
         tools,
         provenance: declared.provenance.clone(),
