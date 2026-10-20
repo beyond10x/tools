@@ -583,6 +583,7 @@ mod tests {
             roots,
             env,
             programs: spec.sandbox.programs.clone(),
+            sandbox: spec.sandbox.clone(),
             facts: Vec::new(),
             tools,
             provenance: declared.provenance.clone(),
