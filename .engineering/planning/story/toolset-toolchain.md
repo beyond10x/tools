@@ -31,7 +31,7 @@ five built-in providers' derived operations pass `tool_contract::validate`.
 
 ## Context
 
-Owner decision 2026-10-20 (atlas ADR 0097): `harness-toolchain` becomes a tools crate. The design
+Owner decision 2026-10-20 (ADR 0097): `harness-toolchain` becomes a tools crate. The design
 (`docs/design/tool-contracts.md` § Toolsets) lists `build-test` as the toolset for toolchain runs.
 The registry fits the profile: a tool's programs, environment, roots and written paths are already
 declared in its YAML, which is what `requires` and `subjects` ask for; what the registry does not

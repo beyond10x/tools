@@ -32,13 +32,15 @@ file is for agents working on this repository; `README.md` is for people.
   one scenario that fails when an implementation ignores it.
 - Implementations derive their schemas from their types; the conformance suite checks the derived
   schema equals the contract's. No hand-written schema in a crate.
-- Capabilities are Canon's (atlas ADR 0083): a contract names the capability it serves; it does not
+- Capabilities are Canon's (ADR 0083): a contract names the capability it serves; it does not
   define a new authority vocabulary. Commission binds and invokes (ADR 0082).
 - Public repository: no person's name, employer, customer, private repository name or private
-  hostname in any committed text, commit message or release note. One exception: the `actor`
-  field `aep` writes into `.engineering/evidence/` and the store's transitions (`human:<login>`
-  from `AEP_ACTOR` or `$USER`) is the account that ran the command; those records are append-only
-  and stay as written.
+  hostname in any committed text, commit message or release note. An ADR is cited as `ADR <n>`,
+  without the repository that holds it. Two exceptions, both records that stay as written: the
+  `actor` field `aep` writes into `.engineering/evidence/` and the store's transitions
+  (`human:<login>` from `AEP_ACTOR` or `$USER`), which is the account that ran the command; and the
+  released `CHANGELOG.md` entries, the wave pages in `docs/plans/` and the release notes of 0.4.0
+  and earlier.
 - Licence per crate, never at the workspace: every crate is Apache-2.0, a crate moved from
   harness included (owner's decision of 2026-10-20); `README.md`'s crate table names each. A
   licence other than Apache-2.0 is the owner's decision, not a wave's.

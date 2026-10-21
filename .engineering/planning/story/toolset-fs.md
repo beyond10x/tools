@@ -35,7 +35,7 @@ truncation contract (epistemic-knowledge-runtime), read caps (P1). harness's rea
 truncation contract (`truncated`, `truncated_lines`, `lines.total` null past the 16 MiB counting
 bound, `depth_bound_reached`) and the caps (64 KiB default, 256 KiB ceiling, 500 entries, 500 paths,
 depth 12); `docs/design/tool-contracts.md` § Operation sets fixes the field names. Owner decision
-2026-10-20 (atlas ADR 0097): harness's tools move here and harness consumes them.
+2026-10-20 (ADR 0097): harness's tools move here and harness consumes them.
 
 ## Scope
 

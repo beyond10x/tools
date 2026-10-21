@@ -65,7 +65,7 @@ reference from an allow-list. The others check the scheme only, so a model reach
 `http.get` carries model-chosen URLs and headers but no body and no secret; it stays at risk low,
 and a governor limits where it goes through `subjects`. `egress.connect` is the tunnel the browser's
 forward proxy uses for HTTP and for HTTPS `CONNECT`; the address rules below apply to it.
-Capability ids are proposals; the implementor checks them against Canon's vocabulary (atlas ADR
+Capability ids are proposals; the implementor checks them against Canon's vocabulary (ADR
 0083) and records the result.
 
 Outcomes beside `ok`: `http.AddressRefused{url, address}`, `http.SchemeRefused{url}`,

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T11:50:47Z",
+  "actor": "human:timo",
+  "artifact": "story:private-adr-citations",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "git grep -n -i -w <name> on impl/private-adr-citations",
+    "reference": "5 lines remain: CHANGELOG.md:47 and :63 (released 0.4.0 and 0.3.0), docs/plans/wave-t1.md, wave-w2.md, wave-w3.md; non-exempt hits 0"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T11:52:39Z",
+  "actor": "human:timo",
+  "artifact": "story:private-adr-citations",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test --workspace --locked --no-fail-fast on impl/private-adr-citations",
+    "reference": "exit 0, 428 passed, 0 failed in 56 lanes; fmt --check exit 0; only markdown files changed"
+  }
+}

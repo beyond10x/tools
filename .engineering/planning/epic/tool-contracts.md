@@ -18,7 +18,7 @@ implementations of those contracts pass each toolset's conformance suite.
 vocabularies, no contract shared by two programs. `docs/design/tool-contracts.md`: the model
 (ESS command plus the `tool-contract/1` profile), the toolsets, conformance and the phases T0 to T3.
 Owner decision 2026-10-19: this repository holds the contracts (`contracts/`) and the default
-implementations (`crates/tool-<toolset>`); atlas ADR 0095.
+implementations (`crates/tool-<toolset>`); ADR 0095.
 
 ## Acceptance
 
