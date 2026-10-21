@@ -12,6 +12,7 @@ contracts/
     fixtures/                       inputs the scenarios use
 ```
 
-Planned toolsets, in order: `fs`, `code-editor`, `process`, `search`, `web`, `git`, `forge`,
-`build-test`, `browser`, `code-intel`, `delegation`, `memory`, `interaction`, `tool-meta`, `control`.
-The design is `docs/design/tool-contracts.md`. Nothing here is released yet.
+Released toolsets: `fs`, `code-editor`, `process`, `search` and `build-test`, each with its
+conformance suite (`CHANGELOG.md` names the release of each). Planned, in order: `web`, `git`,
+`forge`, `browser`, `code-intel`, `delegation`, `memory`, `interaction`, `tool-meta`, `control`.
+The design is `docs/design/tool-contracts.md`.
