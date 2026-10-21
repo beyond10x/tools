@@ -41,6 +41,9 @@ file is for agents working on this repository; `README.md` is for people.
   licence other than Apache-2.0 is the owner's decision, not a wave's.
 - All Git writes (commits, merges, pushes, tags) go through the bot route (`b10x-gates bot -- …`).
 - The planning store changes only through `aep plan artifact` verbs.
+- A review record (`review-result`) is immutable: before `aep plan artifact new --from`, make every
+  path in the reviewer's text repository-relative. The gate refuses absolute home-directory paths
+  (rule `personal-paths`), and no verb can correct a record afterwards.
 
 ## Layout
 

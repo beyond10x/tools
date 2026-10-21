@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:declared-timeouts-are-enforced
 kind: story
-status: draft
+status: active
 title: Every declared timeout_ms is enforced or no longer declared
 relations:
 - decomposes: epic:tool-contracts
@@ -18,7 +18,10 @@ scope:
   path: crates/tool-fs/src/walk.rs
 - confidence: cited
   path: crates/tool-search/src/lib.rs
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T00:33:23Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-21T00:33:23Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

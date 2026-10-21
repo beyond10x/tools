@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:conformance-runner-hosts-and-sequences
 kind: story
-status: draft
+status: active
 title: The conformance runner serves HTTP fixtures, passes host configuration and runs several calls on one toolset
 relations:
 - decomposes: epic:tool-contracts
@@ -13,7 +13,10 @@ scope:
   path: crates/tool-contract/src/conformance.rs
 - confidence: inferred
   path: crates/tool-contract/tests
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T00:33:23Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-10-21T00:33:23Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:process-kill-never-reaches-a-reused-group
 kind: story
-status: draft
+status: active
 title: process.run never signals a process group by a pid it has already reaped
 relations:
 - decomposes: epic:tool-contracts
@@ -10,7 +10,10 @@ relations:
 scope:
 - confidence: cited
   path: crates/tool-process/src/lib.rs
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T00:33:22Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-21T00:33:23Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 
