@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T11:41:58Z",
+  "actor": "human:timo",
+  "artifact": "story:conformance-runner-hosts-and-sequences",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo-serial.sh test --workspace --locked --no-fail-fast",
+    "reference": "conformance-runner/scratch/red.log and adversary red runs (adversary-pass-1.md, adversary-pass-2.md) vs conformance-runner/scratch/coord-c2-test.log (exit 0, 428 passed in 56 lanes; fmt --check and clippy --workspace -D warnings exit 0)"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-21T11:41:58Z",
+  "actor": "human:timo",
+  "artifact": "story:conformance-runner-hosts-and-sequences",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-conformance-runner-pass-2",
+    "reference": "N1 conformance.rs: schema check takes the first scenario whose factory was called; adversary_hosts_2 case green",
+    "review": "review-result:adversary-conformance-runner-pass-2",
+    "outcome": "fixed"
+  }
+}

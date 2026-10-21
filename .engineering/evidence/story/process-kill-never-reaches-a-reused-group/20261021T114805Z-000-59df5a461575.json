@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T11:48:05Z",
+  "actor": "human:timo",
+  "artifact": "story:process-kill-never-reaches-a-reused-group",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test --workspace --locked --no-fail-fast on wave/w4 23e6a47",
+    "reference": "wave-close gate: exit 0, 428 passed, 0 failed in 56 lanes; fmt --check, clippy -D warnings, +1.98.0 check exit 0"
+  }
+}

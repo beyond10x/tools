@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:process-kill-never-reaches-a-reused-group
 kind: story
-status: active
+status: implemented
 title: process.run never signals a process group by a pid it has already reaped
 relations:
 - decomposes: epic:tool-contracts
@@ -10,10 +10,15 @@ relations:
 scope:
 - confidence: cited
   path: crates/tool-process/src/lib.rs
-revision: 4
+- confidence: cited
+  path: crates/tool-process/src/tests.rs
+- confidence: cited
+  path: crates/tool-process/tests/adversary_3.rs
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T00:33:22Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-21T00:33:23Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-21T11:48:05Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Outcome
 
@@ -33,6 +38,10 @@ bound. Harness 0.14.1 only killed a child it had not reaped. The wave shipped wi
 ## Scope
 
 - `crates/tool-process/src/lib.rs` (the wait and the kill)
+- `crates/tool-process/src/tests.rs` (the unit test)
+- `crates/tool-process/tests/adversary_3.rs` (the adversary's cases)
+
+Landed in `e046841`, merged into `wave/w4` as `ae027db`.
 
 ## Acceptance
 

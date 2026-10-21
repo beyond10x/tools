@@ -6,6 +6,41 @@ the bare version.
 
 ## [Unreleased]
 
+### Added
+
+- `fs` v1alpha2 and `search` v1alpha2 contracts: v1alpha1 plus an optional `timeout_ms` input
+  (default 10000; above 60000 refused as `InvalidInput`, after every other input refusal) and a
+  `deadline_reached` output on every operation. At the deadline an operation answers what it had
+  done, with `truncated` set where present and `note` saying so.
+- `tool_fs::deadline::Deadline` and `tool_fs::walk::walk_within`, a walk that stops at a deadline.
+- `tool-conformance/1`, all keys optional so every released suite runs unchanged: a scenario's
+  `host` map goes to the toolset factory and never to an operation; `fixture.serve` answers HTTP/1.1
+  routes on loopback (status, headers, `body` or `body_file`, `redirect`, `delay_ms`) and logs each
+  request to `.serve/<path>.jsonl`, refusing at parse two routes that would share a log and
+  answering `501` to a request with `Transfer-Encoding`; `{{serve}}` and `{{workspace}}` in call
+  input and `host`; `calls`, an ordered list on one toolset instance whose entries read earlier
+  answers as `{{calls.<n>.output.<path>}}`; the file matcher `{$lines: n}`.
+- `tool_contract::conformance::run_with`, whose factory receives a `ScenarioContext` (workspace,
+  `host`, served address) and may report a `Missing` program or setting; the run then names it and
+  counts no scenario as passed. The schema check builds with the `host` and workspace of the first
+  scenario whose factory was called. `run` stays and calls it.
+
+### Changed
+
+- `b10x-tool-fs` and `b10x-tool-search` implement `fs` v1alpha2 and `search` v1alpha2 and enforce
+  the declared `timeout_ms`; they no longer claim v1alpha1, whose documents stay unchanged in
+  `contracts/`. Breaking: `FsError` and `SearchError` gain `TimeoutAboveMax`; the typed inputs gain
+  `timeout_ms` and the outputs `deadline_reached`.
+
+### Fixed
+
+- `process.run` keeps the program's shell unreaped until the group kill at the bound, so the kill can
+  never name a process group whose id was freed and reused; a program dead by its own signal is
+  answered at once, and one that stops itself is killed at the bound.
+- `fs.read`: a line cut by the 16 MiB counting bound ends on a whole character and is listed in
+  `truncated_lines`; a CRLF line the bound stops at its line ending is answered whole and without
+  its `\r`, as an LF line is.
+
 ## [0.4.0] - 2026-10-20
 
 The build-test executor behind a runner seam, so harness runs local and confined toolchain plans
