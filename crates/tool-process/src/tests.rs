@@ -556,3 +556,121 @@ fn every_error_the_crate_returns_is_declared_named_by_an_outcome_and_carries_its
         declared
     );
 }
+
+#[cfg(target_os = "linux")]
+thread_local! {
+    /// What the kill at the bound found of the program's own pid, recorded by [`seen_at_kill`]
+    /// just before the signal with `waitid(P_PID, pid, WEXITED | WNOHANG | WNOWAIT)`, which reaps
+    /// nothing. `Exited` is a program that ended and is not yet reaped, so its pid, and with it
+    /// the id of the group the kill names, is still its own; `ECHILD` is one already reaped, whose
+    /// pid is free for any process to take.
+    static AT_KILL: std::cell::Cell<Option<nix::Result<nix::sys::wait::WaitStatus>>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(target_os = "linux")]
+fn unreaped(pid: nix::unistd::Pid) -> nix::Result<nix::sys::wait::WaitStatus> {
+    use nix::sys::wait::{Id, WaitPidFlag, waitid};
+    waitid(
+        Id::Pid(pid),
+        WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT,
+    )
+}
+
+/// The observation point `Process::run` calls just before it kills at the bound.
+#[cfg(target_os = "linux")]
+pub(crate) fn seen_at_kill(child: &Child) {
+    let pid = i32::try_from(child.id()).expect("a pid fits in an i32");
+    AT_KILL.set(Some(unreaped(nix::unistd::Pid::from_raw(pid))));
+}
+
+/// Runs a shell that prints its own pid and its background `sleep`'s, then ends at once, the
+/// `sleep` holding standard output past a 200 ms bound. Answers what the kill saw of the shell,
+/// the shell's pid and the `sleep`'s, and the reply.
+#[cfg(target_os = "linux")]
+fn killed_after_the_shell_ended(
+    process: &Process,
+) -> (
+    Option<nix::Result<nix::sys::wait::WaitStatus>>,
+    nix::unistd::Pid,
+    nix::unistd::Pid,
+    RunOutput,
+) {
+    AT_KILL.set(None);
+    let output = process
+        .run(
+            &RunInput::argv(["sh", "-c", "sleep 30 & echo $$ $!"]).within(200),
+            None,
+        )
+        .expect("the program runs");
+    let pids: Vec<i32> = output
+        .stdout
+        .split_whitespace()
+        .map(|pid| pid.parse().expect("a pid"))
+        .collect();
+    let [shell, sleep] = pids[..] else {
+        panic!("two pids: {output:?}");
+    };
+    (
+        AT_KILL.take(),
+        nix::unistd::Pid::from_raw(shell),
+        nix::unistd::Pid::from_raw(sleep),
+        output,
+    )
+}
+
+/// The group a kill at the bound names by the shell's pid is the run's own: a shell that ended
+/// while its descendant held the output is still unreaped when the kill is sent, so no other
+/// process can have taken its pid as the id of a group of its own. The descendant is gone after
+/// the call, and the shell is reaped by then.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_kill_at_the_bound_names_a_group_whose_ended_shell_is_not_yet_reaped() {
+    use nix::errno::Errno;
+    use nix::sys::signal::kill;
+    use nix::sys::wait::WaitStatus;
+
+    let inside = workspace();
+    let (seen, shell, sleep, output) =
+        killed_after_the_shell_ended(&running(inside.path(), &["sh"]));
+    assert!(output.timed_out, "{output:?}");
+    assert_eq!(
+        output.exit,
+        Some(0),
+        "the shell ended by itself: {output:?}"
+    );
+    assert_eq!(
+        seen,
+        Some(Ok(WaitStatus::Exited(shell, 0))),
+        "at the kill the shell must be ended and still unreaped, not reaped (ECHILD)"
+    );
+    assert_eq!(
+        kill(sleep, None),
+        Err(Errno::ESRCH),
+        "the descendant outlived the call"
+    );
+    assert_eq!(
+        unreaped(shell),
+        Err(Errno::ECHILD),
+        "the shell is reaped once the reply is built"
+    );
+}
+
+/// The mutant the conformance suite cannot catch, caught here: a runner that reaps the shell as
+/// soon as it has ended kills at the bound by a pid that is already free.
+#[cfg(target_os = "linux")]
+#[test]
+fn reap_before_kill_is_caught_by_the_shell_already_reaped_at_the_kill() {
+    use nix::errno::Errno;
+
+    let inside = workspace();
+    let mutant = Process::mutated(
+        inside.path(),
+        vec!["sh".to_owned()],
+        Mutation::ReapBeforeKill,
+    )
+    .expect("the workspace opens");
+    let (seen, _, _, output) = killed_after_the_shell_ended(&mutant);
+    assert!(output.timed_out, "{output:?}");
+    assert_eq!(seen, Some(Err(Errno::ECHILD)), "{output:?}");
+}
