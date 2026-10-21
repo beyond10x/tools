@@ -35,7 +35,7 @@ reply, and the new `code.patch`, `code.move` and `code.delete`.
 The best forms in the inventory: edit with an `expected_sha256` precondition (workspace), several
 edits resolved against the original file with overlaps refused (P1, P2), a unified diff returned
 (P1). `docs/design/tool-contracts.md` § Operation sets fixes the field names. Owner decision
-2026-10-20 (atlas ADR 0097): harness's tools move here and harness consumes them.
+2026-10-20 (ADR 0097): harness's tools move here and harness consumes them.
 
 ## Scope
 
