@@ -35,7 +35,10 @@ file is for agents working on this repository; `README.md` is for people.
 - Capabilities are Canon's (atlas ADR 0083): a contract names the capability it serves; it does not
   define a new authority vocabulary. Commission binds and invokes (ADR 0082).
 - Public repository: no person's name, employer, customer, private repository name or private
-  hostname in any committed text, commit message or release note.
+  hostname in any committed text, commit message or release note. One exception: the `actor`
+  field `aep` writes into `.engineering/evidence/` and the store's transitions (`human:<login>`
+  from `AEP_ACTOR` or `$USER`) is the account that ran the command; those records are append-only
+  and stay as written.
 - Licence per crate, never at the workspace: every crate is Apache-2.0, a crate moved from
   harness included (owner's decision of 2026-10-20); `README.md`'s crate table names each. A
   licence other than Apache-2.0 is the owner's decision, not a wave's.
