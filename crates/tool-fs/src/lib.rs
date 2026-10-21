@@ -1,5 +1,6 @@
 //! The `fs` toolset: `fs.read`, `fs.list`, `fs.glob` and `fs.stat` over one workspace root, under
-//! the `tool-contract/1` contract in `contracts/fs/v1alpha1`.
+//! the `tool-contract/1` contract in `contracts/fs/v1alpha2`: v1alpha1 with the declared
+//! `timeout_ms` enforced ([`deadline`]) and `deadline_reached` in every answer.
 //!
 //! This crate is harness's `crates/harness-tools/src/local.rs` reader at `798325f` (harness
 //! 0.13.3) moved here: its constants, `open`, `resolve`, `display`, `list`, `open_read`, `read`,
@@ -40,6 +41,7 @@
 //! functions, and a bug in them is the whole boundary. It is the right reader for a run against
 //! an operator's own tree; a run that wants the effects confined puts a confined root under it.
 
+pub mod deadline;
 mod error;
 mod line;
 mod toolset;
@@ -51,7 +53,7 @@ mod tests;
 
 use std::fmt::Write as _;
 use std::fs;
-use std::io::{self, BufReader, Read as _};
+use std::io::{self, BufRead, BufReader, Read as _};
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -63,8 +65,9 @@ pub use types::{
     StatOutput, Window,
 };
 
+use deadline::{DEFAULT_TIMEOUT_MS, Deadline, MAX_TIMEOUT_MS};
 use line::{Line, next_line, whole_prefix};
-use walk::{PathGlob, walk};
+use walk::{PathGlob, walk_within};
 
 /// The most entries one listing answers.
 const MAX_LIST_ENTRIES: usize = 500;
@@ -121,16 +124,20 @@ pub enum Mutation {
     NoContainment,
     /// A caller's `max_bytes` above the 262,144 ceiling is not capped.
     NoCeilingCap,
+    /// The deadline never passes: `timeout_ms` is still refused above its maximum, and then
+    /// never checked.
+    IgnoreDeadline,
 }
 
 impl Mutation {
     /// Every mutation, in declaration order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::NoReadCap,
         Self::NoTruncatedFlag,
         Self::PageDigest,
         Self::NoContainment,
         Self::NoCeilingCap,
+        Self::IgnoreDeadline,
     ];
 
     /// The mutation's name in reports.
@@ -141,6 +148,7 @@ impl Mutation {
             Self::PageDigest => "page-digest",
             Self::NoContainment => "no-containment",
             Self::NoCeilingCap => "no-ceiling-cap",
+            Self::IgnoreDeadline => "ignore-deadline",
         }
     }
 }
@@ -209,6 +217,17 @@ impl Fs {
     /// The canonical workspace root.
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The deadline of one call: `timeout_ms` from now, [`DEFAULT_TIMEOUT_MS`] when the call
+    /// names none. Taken before anything else, so the bound is the call's whole wall clock; a
+    /// `timeout_ms` above [`MAX_TIMEOUT_MS`] is refused later, by [`judge_timeout`], and the
+    /// deadline taken for it is never checked.
+    fn deadline(&self, timeout_ms: Option<u64>) -> Deadline {
+        if self.mutated_by(Mutation::IgnoreDeadline) {
+            return Deadline::never();
+        }
+        Deadline::after_ms(timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).min(MAX_TIMEOUT_MS))
     }
 
     /// Resolves a caller-supplied path inside the workspace.
@@ -303,7 +322,21 @@ impl Fs {
     /// `lines.total` and `sha256` are `None` and `lines_counted_to` says which line the scan
     /// reached. `bytes` is the file's own size from its metadata either way, so the size of the
     /// thing is never in doubt, only how many lines it holds.
+    ///
+    /// The deadline stops the scan the same way: it is checked before the first line and before
+    /// every further line and buffer of one, and where it passed the reply is the counting
+    /// bound's, with a `note` that names the deadline and `deadline_reached` set.
     pub fn read(&self, input: &ReadInput) -> Result<ReadOutput, FsError> {
+        let deadline = self.deadline(input.timeout_ms);
+        self.read_within(input, &deadline)
+    }
+
+    /// [`Fs::read`] under a deadline the caller made, so a test can stop the scan at a known line.
+    pub(crate) fn read_within(
+        &self,
+        input: &ReadInput,
+        deadline: &Deadline,
+    ) -> Result<ReadOutput, FsError> {
         let relative = input.path.as_str();
         let ceiling = if self.mutated_by(Mutation::NoReadCap) {
             u64::MAX
@@ -331,17 +364,11 @@ impl Fs {
                 path: relative.to_owned(),
             });
         }
+        judge_timeout(input.timeout_ms)?;
 
-        let mut digest = Sha256::new();
-        let mut scan = Scan::default();
-        while let Some(line) =
-            next_line(&mut reader, MAX_READ_LINE_BYTES, &mut digest, scan.budget())
-                .map_err(|source| FsError::io(relative, source))?
-        {
-            if !scan.take(&line, offset, input.limit, ceiling) {
-                break;
-            }
-        }
+        let (scan, digest) = scan_file(&mut reader, offset, input.limit, ceiling, deadline)
+            .map_err(|source| FsError::io(relative, source))?;
+        let deadline_reached = deadline.reached();
         let Scan {
             text,
             cut,
@@ -355,8 +382,10 @@ impl Fs {
 
         // A window that starts past the end is a refusal and not an empty answer: the model
         // asked for something that is not there, and *no lines* would read as *the file is
-        // empty*. Line 1 of an empty file is not that case: it is the file, answered whole.
-        if offset > 1 && offset > total {
+        // empty*. Line 1 of an empty file is not that case: it is the file, answered whole. Nor
+        // is a scan the deadline stopped: it never found the end, so the window is answered
+        // empty and the reply says why.
+        if offset > 1 && offset > total && !deadline_reached {
             let path = relative.to_owned();
             return Err(if counting_bounded {
                 FsError::PastScan {
@@ -374,8 +403,9 @@ impl Fs {
         }
         // The digest is of every byte the scan consumed, which is the whole file exactly when
         // the scan reached the end. A digest of the part it reached would read as the whole
-        // file's, so like `lines.total` it is absent then.
-        let sha256 = if counting_bounded {
+        // file's, so like `lines.total` it is absent then, and when the deadline stopped it.
+        let stopped = counting_bounded || deadline_reached;
+        let sha256 = if stopped {
             None
         } else if self.mutated_by(Mutation::PageDigest) {
             Some(hex(&Sha256::digest(text.as_bytes())))
@@ -389,20 +419,16 @@ impl Fs {
         // last line is not reading it. `true` as well when the line count was bounded: the scan
         // stopped before the end, so whether the window reached the last line is not known.
         let truncated = !self.mutated_by(Mutation::NoTruncatedFlag)
-            && (counting_bounded || byte_ceiling_cut || last < total || !cut.is_empty());
+            && (stopped || byte_ceiling_cut || last < total || !cut.is_empty());
         // Only where counting stopped: a field that says *nothing happened* on every ordinary
         // read is bytes replayed on every later turn to say nothing.
-        let (lines_counted_to, note) = if counting_bounded {
-            let note = format!(
-                "line counting stopped after {MAX_LINE_COUNT_BYTES} bytes of `{}`, at line \
-                 {total}, so how many lines it has is not known. `bytes` is still the whole \
-                 file's size, and a window past line {total} is refused rather than guessed at.",
-                self.display(&target)
-            );
-            (Some(total), Some(note))
-        } else {
-            (None, None)
-        };
+        let note = stop_note(
+            &self.display(&target),
+            total,
+            counting_bounded,
+            deadline_reached,
+        );
+        let lines_counted_to = note.is_some().then_some(total);
         Ok(ReadOutput {
             path: self.display(&target),
             bytes,
@@ -418,7 +444,7 @@ impl Fs {
                 },
                 // `None` when the scan stopped: how many lines the file has is then unknown,
                 // and a number that counted part of it would be read as the whole count.
-                total: (!counting_bounded).then_some(total),
+                total: (!stopped).then_some(total),
             },
             truncated,
             // Every line this reply cut, by number. Always present, so an empty list means
@@ -428,6 +454,7 @@ impl Fs {
             sha256,
             lines_counted_to,
             note,
+            deadline_reached,
         })
     }
 
@@ -437,7 +464,22 @@ impl Fs {
     ///
     /// The path is not a directory, is absent, or lands outside the workspace; the directory
     /// cannot be read.
+    ///
+    /// The deadline is checked before the directory is read, after every entry read from it and
+    /// before every entry answered. Where it passed, the entries read by then are answered in
+    /// name order, which on a directory read only in part is not the first of them in name order,
+    /// and `truncated` says the listing is partial.
     pub fn list(&self, input: &ListInput) -> Result<ListOutput, FsError> {
+        let deadline = self.deadline(input.timeout_ms);
+        self.list_within(input, &deadline)
+    }
+
+    /// [`Fs::list`] under a deadline the caller made.
+    pub(crate) fn list_within(
+        &self,
+        input: &ListInput,
+        deadline: &Deadline,
+    ) -> Result<ListOutput, FsError> {
         let relative = input.path.as_deref().unwrap_or(".");
         let target = self.resolve(relative)?;
         if !target.is_dir() {
@@ -445,16 +487,32 @@ impl Fs {
                 path: relative.to_owned(),
             });
         }
-        let mut reader = fs::read_dir(&target)
-            .map_err(|source| FsError::io(relative, source))?
-            .filter_map(Result::ok)
-            .collect::<Vec<_>>();
+        judge_timeout(input.timeout_ms)?;
+        let mut reader = Vec::new();
+        if !deadline.passed() {
+            for entry in fs::read_dir(&target)
+                .map_err(|source| FsError::io(relative, source))?
+                .filter_map(Result::ok)
+            {
+                reader.push(entry);
+                if deadline.passed() {
+                    break;
+                }
+            }
+        }
         reader.sort_by_key(fs::DirEntry::file_name);
+        // Where the deadline cut the reading, the entries read are still answered: at most 500
+        // of them, each one `metadata` call, which is the work the reply is made of. Otherwise
+        // it is checked before every entry, and where it passes the ones before are answered.
+        let cut_while_reading = deadline.reached();
         let mut entries = Vec::new();
         let mut truncated = false;
         for entry in reader {
             if entries.len() >= MAX_LIST_ENTRIES {
                 truncated = true;
+                break;
+            }
+            if !cut_while_reading && deadline.passed() {
                 break;
             }
             // A link's own type is not its target's, so a link to a directory used to be listed
@@ -477,7 +535,9 @@ impl Fs {
             path: self.display(&target),
             entries,
             // Named, so the model knows the listing is partial rather than assuming it is whole.
-            truncated: truncated && !self.mutated_by(Mutation::NoTruncatedFlag),
+            truncated: (truncated || deadline.reached())
+                && !self.mutated_by(Mutation::NoTruncatedFlag),
+            deadline_reached: deadline.reached(),
         })
     }
 
@@ -486,7 +546,20 @@ impl Fs {
     /// # Errors
     ///
     /// The glob is empty or does not compile; the path is absent or lands outside the workspace.
+    ///
+    /// The deadline is checked by the walk ([`walk_within`]) at every directory and before every
+    /// entry; where it passed, the matches found by then are answered and `truncated` is set.
     pub fn glob(&self, input: &GlobInput) -> Result<GlobOutput, FsError> {
+        let deadline = self.deadline(input.timeout_ms);
+        self.glob_within(input, &deadline)
+    }
+
+    /// [`Fs::glob`] under a deadline the caller made.
+    pub(crate) fn glob_within(
+        &self,
+        input: &GlobInput,
+        deadline: &Deadline,
+    ) -> Result<GlobOutput, FsError> {
         // An empty glob matches no path, so a glob with one answered an empty list, which reads
         // as *there are no such files* rather than as *you named no pattern*.
         if input.glob.is_empty() {
@@ -499,10 +572,11 @@ impl Fs {
         });
         let filter = PathGlob::compile(&input.glob)?;
         let root = self.resolve(input.path.as_deref().unwrap_or("."))?;
+        judge_timeout(input.timeout_ms)?;
 
         let mut paths = Vec::new();
         let mut truncated = false;
-        let walked = walk(&root, &self.root, 0, &mut |file| {
+        let walked = walk_within(&root, &self.root, 0, deadline, &mut |file| {
             let shown = self.display(file);
             if !filter.matches(&shown) {
                 return true;
@@ -519,11 +593,14 @@ impl Fs {
         });
         Ok(GlobOutput {
             paths,
-            truncated: truncated && !self.mutated_by(Mutation::NoTruncatedFlag),
+            // A walk the deadline stopped may have had more matches past where it stopped.
+            truncated: (truncated || deadline.reached())
+                && !self.mutated_by(Mutation::NoTruncatedFlag),
             // Always present, like `truncated`. A glob says it lists every match under the
             // workspace; where the walk stopped descending, it listed the matches above a depth
             // instead, and nothing else in the reply would say so.
             depth_bound_reached: walked.bounded,
+            deadline_reached: deadline.reached(),
         })
     }
 
@@ -532,7 +609,21 @@ impl Fs {
     /// # Errors
     ///
     /// The path is absent or lands outside the workspace; its metadata cannot be read.
+    ///
+    /// The deadline is checked once the entry's metadata is read, before the file is opened,
+    /// and between the chunks of the digest; where it passed, `kind` and `bytes` are answered
+    /// and `sha256` is not.
     pub fn stat(&self, input: &StatInput) -> Result<StatOutput, FsError> {
+        let deadline = self.deadline(input.timeout_ms);
+        self.stat_within(input, &deadline)
+    }
+
+    /// [`Fs::stat`] under a deadline the caller made.
+    pub(crate) fn stat_within(
+        &self,
+        input: &StatInput,
+        deadline: &Deadline,
+    ) -> Result<StatOutput, FsError> {
         let relative = input.path.as_str();
         // Where the path lands decides whether it is answered at all: a link out of the
         // workspace is refused here, before its own kind is looked at.
@@ -542,6 +633,8 @@ impl Fs {
             .symlink_metadata()
             .map_err(|source| FsError::io(relative, source))?;
         let kind = Kind::of(meta.file_type());
+        judge_timeout(input.timeout_ms)?;
+        let reached = deadline.passed();
         if kind == Kind::Symlink {
             // The link's own place: its parent resolved, its own name kept, so a link is
             // answered as a link under the name the caller can list it by.
@@ -557,13 +650,16 @@ impl Fs {
                 kind,
                 bytes: None,
                 sha256: None,
+                deadline_reached: reached,
             });
         }
         let bytes = (kind == Kind::File).then_some(meta.len());
         // At most the counting bound, for the reason a read's digest is: a file a read would
-        // not finish scanning is not one this answers a digest for either.
-        let sha256 = if kind == Kind::File && meta.len() <= MAX_LINE_COUNT_BYTES {
-            Some(digest_file(&target).map_err(|source| FsError::io(relative, source))?)
+        // not finish scanning is not one this answers a digest for either. `None` as well where
+        // the deadline passed before or during the digest: a digest of part of the file would
+        // read as the whole file's.
+        let sha256 = if !reached && kind == Kind::File && meta.len() <= MAX_LINE_COUNT_BYTES {
+            digest_file(&target, deadline).map_err(|source| FsError::io(relative, source))?
         } else {
             None
         };
@@ -572,6 +668,7 @@ impl Fs {
             kind,
             bytes,
             sha256,
+            deadline_reached: deadline.reached(),
         })
     }
 }
@@ -655,8 +752,13 @@ impl Scan {
                 .unwrap_or(usize::MAX)
                 .min(line.kept.len());
             &line.kept[..whole_prefix(&line.kept[..allowed])]
-        } else {
+        } else if line.whole {
             &line.kept
+        } else {
+            // A line held only in part (at the bytes kept, at the counting bound or at the
+            // deadline) can end inside a character, and the byte or two of it would be answered
+            // as U+FFFD; the cut lands between characters, as the byte ceiling's does.
+            &line.kept[..whole_prefix(&line.kept)]
         };
         let content = String::from_utf8_lossy(shown_bytes);
         let shown: String = content.chars().take(MAX_READ_LINE_CHARS).collect();
@@ -670,19 +772,99 @@ impl Scan {
     }
 }
 
-/// The SHA-256 of the file at `path` as lowercase hex, read in chunks.
-fn digest_file(path: &Path) -> io::Result<String> {
+/// Refuses a `timeout_ms` above [`MAX_TIMEOUT_MS`] rather than capping it: a caller who asked for
+/// more time than the contract allows is told so, instead of reading an answer stopped short as
+/// though it had the time it asked for.
+///
+/// Each operation calls it **after every other refusal of its input and before it reads
+/// anything** (wave w4 D3): the path, the window and the glob are the refusals a governor reads,
+/// so a call that would be refused for them is refused for them whatever its `timeout_ms`.
+fn judge_timeout(timeout_ms: Option<u64>) -> Result<(), FsError> {
+    match timeout_ms {
+        Some(timeout_ms) if timeout_ms > MAX_TIMEOUT_MS => {
+            Err(FsError::TimeoutAboveMax { timeout_ms })
+        }
+        _ => Ok(()),
+    }
+}
+
+/// One read's pass over its file from the start: every line counted and fed to the digest, the
+/// window's lines kept, until the end, the counting bound or the deadline.
+///
+/// The deadline is checked before every line, the first included, so a deadline of 0 reads
+/// nothing; and `next_line` checks it again between the buffers of one long line.
+fn scan_file(
+    reader: &mut impl BufRead,
+    offset: u64,
+    limit: Option<u64>,
+    ceiling: u64,
+    deadline: &Deadline,
+) -> io::Result<(Scan, Sha256)> {
+    let mut digest = Sha256::new();
+    let mut scan = Scan::default();
+    while !deadline.passed() {
+        let Some(line) = next_line(
+            reader,
+            MAX_READ_LINE_BYTES,
+            &mut digest,
+            scan.budget(),
+            deadline,
+        )?
+        else {
+            break;
+        };
+        if !scan.take(&line, offset, limit, ceiling) {
+            break;
+        }
+    }
+    Ok((scan, digest))
+}
+
+/// Why a read's `lines.total` is `None`, when it is: the counting bound or the deadline stopped
+/// the scan of `shown` at line `total`. `None` on every other read.
+fn stop_note(
+    shown: &str,
+    total: u64,
+    counting_bounded: bool,
+    deadline_reached: bool,
+) -> Option<String> {
+    if counting_bounded {
+        Some(format!(
+            "line counting stopped after {MAX_LINE_COUNT_BYTES} bytes of `{shown}`, at line \
+             {total}, so how many lines it has is not known. `bytes` is still the whole \
+             file's size, and a window past line {total} is refused rather than guessed at."
+        ))
+    } else if deadline_reached {
+        Some(format!(
+            "the call's deadline (`timeout_ms`) was reached after line {total} of `{shown}`, so \
+             the text holds the lines read by then and how many lines the file has is not \
+             known. `bytes` is still the whole file's size; ask again with a longer \
+             `timeout_ms` or a window that starts nearer the top."
+        ))
+    } else {
+        None
+    }
+}
+
+/// The SHA-256 of the file at `path` as lowercase hex, read in chunks; `None` when `deadline`
+/// passed between two of them. The caller checked it before the first.
+fn digest_file(path: &Path, deadline: &Deadline) -> io::Result<Option<String>> {
     let mut file = fs::File::open(path)?;
     let mut digest = Sha256::new();
     let mut buffer = vec![0_u8; 64 * 1024];
+    let mut first = true;
     loop {
+        if !first && deadline.passed() {
+            return Ok(None);
+        }
+        first = false;
         let read = file.read(&mut buffer)?;
         if read == 0 {
             break;
         }
         digest.update(&buffer[..read]);
     }
-    Ok(hex(&digest.finalize()))
+    Ok(Some(hex(&digest.finalize())))
 }
 
 /// `bytes` as lowercase hex.

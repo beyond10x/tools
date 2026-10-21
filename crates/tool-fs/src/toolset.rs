@@ -16,10 +16,10 @@ use crate::types::{
     GlobInput, GlobOutput, ListInput, ListOutput, ReadInput, ReadOutput, StatInput, StatOutput,
 };
 
-/// The `fs` v1alpha1 contract document, compiled in so the binary carries the contract it claims.
-pub const CONTRACT_YAML: &str = tool_contract::documents::FS_V1ALPHA1;
+/// The `fs` v1alpha2 contract document, compiled in so the binary carries the contract it claims.
+pub const CONTRACT_YAML: &str = tool_contract::documents::FS_V1ALPHA2;
 
-/// The parsed `fs` v1alpha1 contract this crate implements, parsed once.
+/// The parsed `fs` v1alpha2 contract this crate implements, parsed once.
 ///
 /// # Panics
 ///

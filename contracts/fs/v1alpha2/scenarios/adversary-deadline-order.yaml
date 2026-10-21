@@ -1,0 +1,200 @@
+format: tool-conformance/1
+toolset: fs
+version: v1alpha2
+scenarios:
+  - name: adversary2-order-read-outside-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "../x.txt", "timeout_ms": 60001}}
+    expect:
+      error: fs.OutsideWorkspace
+  - name: adversary2-order-read-outside-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "../x.txt", "timeout_ms": 0}}
+    expect:
+      error: fs.OutsideWorkspace
+  - name: adversary2-order-read-missing-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "missing.txt", "timeout_ms": 60001}}
+    expect:
+      error: fs.NotFound
+  - name: adversary2-order-read-missing-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "missing.txt", "timeout_ms": 0}}
+    expect:
+      error: fs.NotFound
+  - name: adversary2-order-read-directory-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "sub", "timeout_ms": 60001}}
+    expect:
+      error: fs.NotAFile
+  - name: adversary2-order-read-directory-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "sub", "timeout_ms": 0}}
+    expect:
+      error: fs.NotAFile
+  - name: adversary2-order-read-offset-0-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "a.txt", "offset": 0, "timeout_ms": 60001}}
+    expect:
+      error: fs.InvalidWindow
+  - name: adversary2-order-read-offset-0-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "a.txt", "offset": 0, "timeout_ms": 0}}
+    expect:
+      error: fs.InvalidWindow
+  - name: adversary2-order-read-limit-0-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "a.txt", "limit": 0, "timeout_ms": 60001}}
+    expect:
+      error: fs.InvalidWindow
+  - name: adversary2-order-read-limit-0-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.read, input: {"path": "a.txt", "limit": 0, "timeout_ms": 0}}
+    expect:
+      error: fs.InvalidWindow
+  - name: adversary2-order-list-outside-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.list, input: {"path": "..", "timeout_ms": 60001}}
+    expect:
+      error: fs.OutsideWorkspace
+  - name: adversary2-order-list-outside-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.list, input: {"path": "..", "timeout_ms": 0}}
+    expect:
+      error: fs.OutsideWorkspace
+  - name: adversary2-order-list-missing-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.list, input: {"path": "missing", "timeout_ms": 60001}}
+    expect:
+      error: fs.NotFound
+  - name: adversary2-order-list-missing-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.list, input: {"path": "missing", "timeout_ms": 0}}
+    expect:
+      error: fs.NotFound
+  - name: adversary2-order-list-file-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.list, input: {"path": "a.txt", "timeout_ms": 60001}}
+    expect:
+      error: fs.NotADirectory
+  - name: adversary2-order-list-file-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.list, input: {"path": "a.txt", "timeout_ms": 0}}
+    expect:
+      error: fs.NotADirectory
+  - name: adversary2-order-glob-empty-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.glob, input: {"glob": "", "timeout_ms": 60001}}
+    expect:
+      error: fs.InvalidGlob
+  - name: adversary2-order-glob-empty-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.glob, input: {"glob": "", "timeout_ms": 0}}
+    expect:
+      error: fs.InvalidGlob
+  - name: adversary2-order-glob-broken-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.glob, input: {"glob": "sub/[", "timeout_ms": 60001}}
+    expect:
+      error: fs.InvalidGlob
+  - name: adversary2-order-glob-broken-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.glob, input: {"glob": "sub/[", "timeout_ms": 0}}
+    expect:
+      error: fs.InvalidGlob
+  - name: adversary2-order-glob-outside-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.glob, input: {"glob": "*.txt", "path": "..", "timeout_ms": 60001}}
+    expect:
+      error: fs.OutsideWorkspace
+  - name: adversary2-order-glob-outside-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.glob, input: {"glob": "*.txt", "path": "..", "timeout_ms": 0}}
+    expect:
+      error: fs.OutsideWorkspace
+  - name: adversary2-order-glob-missing-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.glob, input: {"glob": "*.txt", "path": "missing", "timeout_ms": 60001}}
+    expect:
+      error: fs.NotFound
+  - name: adversary2-order-glob-missing-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.glob, input: {"glob": "*.txt", "path": "missing", "timeout_ms": 0}}
+    expect:
+      error: fs.NotFound
+  - name: adversary2-order-stat-outside-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.stat, input: {"path": "../x.txt", "timeout_ms": 60001}}
+    expect:
+      error: fs.OutsideWorkspace
+  - name: adversary2-order-stat-outside-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.stat, input: {"path": "../x.txt", "timeout_ms": 0}}
+    expect:
+      error: fs.OutsideWorkspace
+  - name: adversary2-order-stat-missing-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.stat, input: {"path": "missing.txt", "timeout_ms": 60001}}
+    expect:
+      error: fs.NotFound
+  - name: adversary2-order-stat-missing-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: fs.stat, input: {"path": "missing.txt", "timeout_ms": 0}}
+    expect:
+      error: fs.NotFound

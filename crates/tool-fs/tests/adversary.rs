@@ -1,7 +1,8 @@
 //! The adversary's cases for the `fs` v1alpha1 unit, each written against one sentence of
-//! `contracts/fs/v1alpha1/contract.yaml` or `semantics.md` before anything was run.
+//! `contracts/fs/v1alpha1/contract.yaml` or `semantics.md` before anything was run, and run since
+//! the deadline story from the v1alpha2 copy, which holds the same sentences.
 //!
-//! The scenario cases are `contracts/fs/v1alpha1/scenarios/adversary-*.yaml`; a test here picks
+//! The scenario cases are `contracts/fs/v1alpha2/scenarios/adversary-*.yaml`; a test here picks
 //! one out of the merged suite's report so that one case can be run and read alone. The direct
 //! cases need a file too large for a fixture or an input the suite format does not express.
 
@@ -15,7 +16,7 @@ use tool_fs::{Fs, ReadInput, StatInput, contract};
 const COUNTING_BOUND: u64 = 16 * 1024 * 1024;
 
 fn contract_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/fs/v1alpha1")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/fs/v1alpha2")
 }
 
 fn scratch() -> tempfile::TempDir {
@@ -72,7 +73,9 @@ fn a_path_through_a_file_does_not_exist_and_is_not_found() {
 // Every other adversary scenario pins a sentence or a constant no earlier scenario held: the depth
 // bound at exactly 12, all five skipped directories, the 2000-character cut, the byte ceiling at
 // exactly its value, the last line as a window and the line after it, a missing input field, a
-// link that leads nowhere, a link to a directory inside the workspace.
+// link that leads nowhere, a link to a directory inside the workspace. Since the deadline story
+// the three of `adversary-deadline.yaml` are among them too (each also run alone by
+// `tests/adversary_deadline.rs`), so the count is 21 and those 3.
 #[test]
 fn the_other_adversary_scenarios_hold() {
     let report = suite_report();
@@ -91,7 +94,7 @@ fn the_other_adversary_scenarios_hold() {
         .collect();
     assert_eq!(
         others.len(),
-        21,
+        21 + 3,
         "the adversary scenarios all ran: {report}"
     );
     for result in others {
@@ -116,9 +119,7 @@ fn a_file_one_byte_under_the_counting_bound_is_counted_and_digested_whole() {
     let (_dir, local) = workspace_with("under.txt", &body);
 
     let described = local
-        .stat(&StatInput {
-            path: "under.txt".to_owned(),
-        })
+        .stat(&StatInput::new("under.txt".to_owned()))
         .expect("stat answers");
     assert!(
         described.sha256.is_some(),
@@ -188,9 +189,7 @@ fn a_file_over_the_counting_bound_with_no_newline_is_over_it_for_read_as_well_as
     let (_dir, local) = workspace_with("blob.bin", &body);
 
     let described = local
-        .stat(&StatInput {
-            path: "blob.bin".to_owned(),
-        })
+        .stat(&StatInput::new("blob.bin".to_owned()))
         .expect("stat answers");
     let read = local
         .read(&ReadInput::whole("blob.bin"))

@@ -1,0 +1,112 @@
+format: tool-conformance/1
+toolset: search
+version: v1alpha2
+scenarios:
+  - name: a-search-starts-where-path-says
+    holds: [subjects]
+    fixture:
+      files:
+        src/one.rs: "needle\n"
+        top.txt: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle, path: src}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: src/one.rs, line: 1, text: needle}
+  - name: a-search-of-one-file-answers-under-its-own-path
+    holds: [subjects, output]
+    fixture:
+      files:
+        src/one.rs: "needle\n"
+        src/two.rs: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle, path: src/one.rs}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: src/one.rs, line: 1, text: needle}
+        truncated: false
+  - name: a-path-that-climbs-out-is-refused-with-nothing-read
+    holds: [subjects, effects]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, path: ".."}}
+    expect:
+      error: search.OutsideWorkspace
+      output: {path: ".."}
+      files: {a.txt: unchanged}
+  - name: a-path-that-climbs-out-to-nowhere-is-refused-as-outside
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, path: ../nowhere-at-all}}
+    expect:
+      error: search.OutsideWorkspace
+      output: {path: ../nowhere-at-all}
+  - name: a-path-that-starts-at-the-filesystem-root-is-refused
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, path: "/"}}
+    expect:
+      error: search.OutsideWorkspace
+      output: {path: "/"}
+  - name: a-missing-path-is-not-found
+    holds: [subjects, output]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, path: nowhere}}
+    expect:
+      error: search.NotFound
+      output: {path: nowhere}
+  - name: a-path-through-a-file-is-not-found
+    holds: [subjects, output]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, path: a.txt/x}}
+    expect:
+      error: search.NotFound
+      output: {path: a.txt/x}
+  - name: a-link-out-of-the-workspace-is-not-searched
+    holds: [subjects, effects]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: inner, line: 1, text: needle}
+          - {path: own.txt, line: 1, text: needle}
+        truncated: false
+        depth_bound_reached: false
+      files: {inner: unchanged, nowhere: unchanged, own.txt: unchanged, up: unchanged}
+  - name: a-search-started-in-a-link-out-of-the-workspace-is-refused
+    holds: [subjects]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: search.grep, input: {pattern: needle, path: up}}
+    expect:
+      error: search.OutsideWorkspace
+      output: {path: up}
+      files: {up: unchanged}
+  - name: a-search-of-a-link-that-lands-inside-is-under-its-targets-name
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: search.grep, input: {pattern: needle, path: inner}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: own.txt, line: 1, text: needle}
+  - name: a-search-of-a-link-that-leads-nowhere-is-not-found
+    holds: [subjects, output]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: search.grep, input: {pattern: needle, path: nowhere}}
+    expect:
+      error: search.NotFound
+      output: {path: nowhere}
+      files: {nowhere: unchanged}

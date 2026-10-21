@@ -1,0 +1,27 @@
+format: tool-conformance/1
+toolset: search
+version: v1alpha2
+scenarios:
+  - name: adversary-a-path-that-climbs-out-is-refused-for-the-path-whatever-its-deadline-asks
+    holds: [bounds, subjects]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, path: "..", timeout_ms: 60001}}
+    expect:
+      error: search.OutsideWorkspace
+      output: {path: ".."}
+  - name: adversary-a-broken-expression-is-refused-for-the-pattern-whatever-its-deadline-asks
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: "fn (alpha", regex: true, timeout_ms: 60001}}
+    expect:
+      error: search.InvalidPattern
+      output: {pattern: "fn (alpha"}
+  - name: adversary-a-negative-deadline-is-not-the-operations-input
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, timeout_ms: -1}}
+    expect:
+      error: search.InvalidInput

@@ -11,11 +11,11 @@ use tool_contract::conformance::{Outcome, Toolset};
 use crate::Search;
 use crate::types::{GrepInput, GrepOutput};
 
-/// The `search` v1alpha1 contract document, compiled in so the binary carries the contract it
+/// The `search` v1alpha2 contract document, compiled in so the binary carries the contract it
 /// claims.
-pub const CONTRACT_YAML: &str = tool_contract::documents::SEARCH_V1ALPHA1;
+pub const CONTRACT_YAML: &str = tool_contract::documents::SEARCH_V1ALPHA2;
 
-/// The parsed `search` v1alpha1 contract this crate implements, parsed once.
+/// The parsed `search` v1alpha2 contract this crate implements, parsed once.
 ///
 /// # Panics
 ///

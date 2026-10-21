@@ -1,5 +1,6 @@
 //! The `search` toolset: `search.grep` over one workspace root, under the `tool-contract/1`
-//! contract in `contracts/search/v1alpha1`.
+//! contract in `contracts/search/v1alpha2`: v1alpha1 with the declared `timeout_ms` enforced
+//! ([`tool_fs::deadline`]) and `deadline_reached` in every answer.
 //!
 //! This crate is harness's `crates/harness-tools/src/local.rs` search at harness 0.14.1
 //! (`f109612e`) moved here: the constants `MAX_GREP_RESULTS`, `MAX_GREP_FILE_BYTES`,
@@ -53,7 +54,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use regex::{Regex, RegexBuilder};
-use tool_fs::walk::{PathGlob, SKIPPED, contained, walk};
+use tool_fs::deadline::{DEFAULT_TIMEOUT_MS, Deadline, MAX_TIMEOUT_MS};
+use tool_fs::walk::{PathGlob, SKIPPED, contained, walk_within};
 
 pub use error::SearchError;
 pub use toolset::{CONTRACT_YAML, contract};
@@ -105,11 +107,14 @@ pub enum Mutation {
     NoSkippedFileNames,
     /// A file that is valid UTF-8 and holds a NUL byte is searched, as harness had it.
     NulIsText,
+    /// The deadline never passes: `timeout_ms` is still refused above its maximum, and then
+    /// never checked.
+    IgnoreDeadline,
 }
 
 impl Mutation {
     /// Every mutation, in declaration order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::NoResultCap,
         Self::NoTruncatedFlag,
         Self::NoLargeFileBound,
@@ -118,6 +123,7 @@ impl Mutation {
         Self::NoContextCap,
         Self::NoSkippedFileNames,
         Self::NulIsText,
+        Self::IgnoreDeadline,
     ];
 
     /// The mutation's name in reports.
@@ -131,6 +137,7 @@ impl Mutation {
             Self::NoContextCap => "no-context-cap",
             Self::NoSkippedFileNames => "no-skipped-file-names",
             Self::NulIsText => "nul-is-text",
+            Self::IgnoreDeadline => "ignore-deadline",
         }
     }
 }
@@ -263,8 +270,38 @@ impl Search {
     /// # Errors
     ///
     /// The pattern is empty or, as a regular expression, does not compile within the size limit;
-    /// the glob is empty or does not compile; the path is absent or lands outside the workspace.
+    /// the glob is empty or does not compile; the path is absent or lands outside the workspace;
+    /// `timeout_ms` is above [`MAX_TIMEOUT_MS`].
+    ///
+    /// # The deadline
+    ///
+    /// Taken first, so the bound is the call's whole wall clock. Above the maximum it is refused
+    /// rather than capped, as `fs` refuses it, and only once the pattern, the glob and the path
+    /// have been judged (wave w4 D3): those are the refusals a governor reads, so a call that
+    /// would be refused for them is refused for them whatever its `timeout_ms`. The walk checks
+    /// the deadline at every directory and before every entry ([`walk_within`]), and the search
+    /// checks it before every line it matches; where it passed the matches found by then are
+    /// answered, `truncated` is set because a match may lie past the stop, and `note` says so.
     pub fn grep(&self, input: &GrepInput) -> Result<GrepOutput, SearchError> {
+        let deadline = if self.mutated_by(Mutation::IgnoreDeadline) {
+            Deadline::never()
+        } else {
+            Deadline::after_ms(
+                input
+                    .timeout_ms
+                    .unwrap_or(DEFAULT_TIMEOUT_MS)
+                    .min(MAX_TIMEOUT_MS),
+            )
+        };
+        self.grep_within(input, &deadline)
+    }
+
+    /// [`Search::grep`] under a deadline the caller made, so a test can stop it at a known line.
+    pub(crate) fn grep_within(
+        &self,
+        input: &GrepInput,
+        deadline: &Deadline,
+    ) -> Result<GrepOutput, SearchError> {
         let pattern = input.pattern.as_str();
         if pattern.is_empty() {
             return Err(SearchError::EmptyPattern);
@@ -283,6 +320,10 @@ impl Search {
         let expression = search_expression(pattern, regex)?;
         let filter = input.glob.as_deref().map(compile_glob).transpose()?;
         let start = self.resolve(input.path.as_deref().unwrap_or("."))?;
+        // After the pattern, the glob and the path, before anything is read (wave w4 D3).
+        if let Some(timeout_ms) = input.timeout_ms.filter(|asked| *asked > MAX_TIMEOUT_MS) {
+            return Err(SearchError::TimeoutAboveMax { timeout_ms });
+        }
 
         let mut grep = Grep {
             search: self,
@@ -294,27 +335,44 @@ impl Search {
             context: usize::try_from(context).unwrap_or(usize::MAX),
             cut: !self.mutated_by(Mutation::NoMatchCut),
             bounded: !self.mutated_by(Mutation::NoLargeFileBound),
+            deadline,
             matches: Vec::new(),
             truncated: false,
             skipped_large_files: 0,
             skipped_large_paths: Vec::new(),
         };
-        let walked = walk(&start, self.boundary(), 0, &mut |file| grep.visit(file));
+        let walked = walk_within(&start, self.boundary(), 0, deadline, &mut |file| {
+            grep.visit(file)
+        });
+        let deadline_reached = deadline.reached();
 
         // Only when the cap bit. A caller who asked for forty lines got five, and a reply that
         // did not say so leaves them reading five as though it were forty.
         let capped = asked_context > MAX_SEARCH_CONTEXT;
-        let note = capped.then(|| {
+        let capped_note = capped.then(|| {
             format!(
                 "`context` was {asked_context} and this build answers at most \
                  {MAX_SEARCH_CONTEXT} lines either side of a match, so {MAX_SEARCH_CONTEXT} is \
                  what these matches carry."
             )
         });
+        // Only when the deadline stopped the search: the matches are the ones found by then, and
+        // a reply that did not say why it stopped would read as the whole answer.
+        let deadline_note = deadline_reached.then(|| {
+            "the call's deadline (`timeout_ms`) was reached before the search was done, so \
+             these are the matches found by then and more may exist. Ask again with a longer \
+             `timeout_ms`, a narrower `path` or a `glob`."
+                .to_owned()
+        });
+        let note = match (capped_note, deadline_note) {
+            (Some(capped), Some(deadline)) => Some(format!("{capped} And {deadline}")),
+            (capped, deadline) => capped.or(deadline),
+        };
         Ok(GrepOutput {
             pattern: pattern.to_owned(),
             matches: grep.matches,
-            truncated: grep.truncated && !self.mutated_by(Mutation::NoTruncatedFlag),
+            truncated: (grep.truncated || deadline_reached)
+                && !self.mutated_by(Mutation::NoTruncatedFlag),
             // Always present, like `truncated`: a walk that stopped descending at the depth bound
             // searched a subset of the tree, and a reply that said nothing about it reads exactly
             // like one that searched everything.
@@ -327,6 +385,7 @@ impl Search {
             glob: input.glob.clone(),
             context: capped.then_some(MAX_SEARCH_CONTEXT),
             note,
+            deadline_reached,
         })
     }
 }
@@ -345,6 +404,8 @@ struct Grep<'a> {
     cut: bool,
     /// Files over [`MAX_GREP_FILE_BYTES`] are passed over.
     bounded: bool,
+    /// Checked before every line; the walk checks it before every entry.
+    deadline: &'a Deadline,
     matches: Vec<Match>,
     truncated: bool,
     skipped_large_files: u64,
@@ -399,6 +460,11 @@ impl Grep<'_> {
         }
         let lines: Vec<&str> = text.lines().collect();
         for (index, line) in lines.iter().enumerate() {
+            // A file of 1 MiB of short lines is the long part of a search, so the deadline is
+            // checked here and not only between files.
+            if self.deadline.passed() {
+                return false;
+            }
             if !self.hits(line) {
                 continue;
             }

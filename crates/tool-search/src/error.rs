@@ -5,6 +5,7 @@ use std::io;
 
 use serde_json::{Value, json};
 use tool_fs::FsError;
+use tool_fs::deadline::MAX_TIMEOUT_MS;
 
 /// Why a search refused, or why a workspace did not open.
 #[derive(Debug, thiserror::Error)]
@@ -71,6 +72,16 @@ pub enum SearchError {
         /// The path as given.
         path: String,
     },
+    /// `timeout_ms` is above the most a call may name.
+    #[error(
+        "`timeout_ms` is {timeout_ms} and the most a call may name is {max} milliseconds. \
+         Nothing was read.",
+        max = MAX_TIMEOUT_MS
+    )]
+    TimeoutAboveMax {
+        /// The bound asked for.
+        timeout_ms: u64,
+    },
     /// The filesystem refused for a reason other than the path's absence.
     #[error("`{path}`: {source}")]
     Io {
@@ -93,6 +104,7 @@ impl SearchError {
             Self::EmptyGlob | Self::InvalidGlob { .. } => "search.InvalidGlob",
             Self::NotFound { .. } => "search.NotFound",
             Self::OutsideWorkspace { .. } => "search.OutsideWorkspace",
+            Self::TimeoutAboveMax { .. } => "search.InvalidInput",
         }
     }
 
@@ -109,6 +121,8 @@ impl SearchError {
             Self::InvalidPattern { pattern, .. } => json!({ "pattern": pattern }),
             Self::EmptyGlob => json!({ "glob": "" }),
             Self::InvalidGlob { glob, .. } => json!({ "glob": glob }),
+            // `search.InvalidInput` declares no fields.
+            Self::TimeoutAboveMax { .. } => json!({}),
         }
     }
 

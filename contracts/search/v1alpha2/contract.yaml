@@ -1,0 +1,168 @@
+format: tool-contract/1
+toolset: search
+version: v1alpha2
+summary: >-
+  Find text in the files of one workspace root: a literal substring or a regular expression,
+  narrowed by a glob, answered line by line with the lines around each match. The walk is the
+  one the fs toolset's glob takes, so the same directories are skipped (and a file of one of
+  their names is not searched), a link out of the root is not followed and the same depth bound
+  applies; every cut a bound makes is named in the result, including the files too large to
+  search and the deadline; nothing is written.
+types:
+  - name: search.Line
+    kind: struct
+    summary: One line of context around a match, under its own number.
+    fields:
+      - name: line
+        type: Integer
+        description: The line's number in its file, numbered from 1.
+      - name: text
+        type: String
+        description: The line, cut at 400 characters.
+      - name: line_truncated
+        type: Boolean
+        description: The line is longer than 400 characters and text holds its first 400.
+  - name: search.Match
+    kind: struct
+    summary: One line that matched, and the lines around it when context was asked for.
+    fields:
+      - name: path
+        type: String
+        description: The file's workspace-relative path.
+      - name: line
+        type: Integer
+        description: The matching line's number in the file, numbered from 1.
+      - name: text
+        type: String
+        description: The matching line, cut at 400 characters.
+      - name: line_truncated
+        type: Boolean
+        description: The line is longer than 400 characters and text holds its first 400.
+      - name: before
+        type: Optional<List<search.Line>>
+        description: The lines before the match, at most context of them, in file order; absent when no context was asked for.
+      - name: after
+        type: Optional<List<search.Line>>
+        description: The lines after the match, at most context of them, in file order; absent when no context was asked for.
+errors:
+  - name: search.InvalidPattern
+    summary: pattern is empty, or regex is set and pattern does not compile within the size limit; the message carries the compiler's words. Nothing was read.
+    fields: [{name: pattern, type: String}]
+  - name: search.InvalidGlob
+    summary: glob is empty or does not compile; the message carries the compiler's words. Nothing was read.
+    fields: [{name: glob, type: String}]
+  - name: search.NotFound
+    summary: Nothing exists at the path; it is absent, a component of it is a file where a directory would have to be, or a link there leads nowhere.
+    fields: [{name: path, type: String}]
+  - name: search.OutsideWorkspace
+    summary: The path lands outside the workspace root, by climbing out, by starting at the filesystem root or through a link; nothing was read.
+    fields: [{name: path, type: String}]
+  - name: search.InvalidInput
+    summary: The input is not the operation's input; a field is missing, unknown or of the wrong type, or timeout_ms is above 60000, and the message says which.
+  - name: search.Io
+    summary: The filesystem refused for a reason other than the path's absence; the message carries the system's words.
+    fields: [{name: path, type: String}]
+operations:
+  - name: search.grep
+    summary: Find the lines of the files under a path that contain a literal pattern or match a regular expression.
+    guidance: >-
+      pattern is a literal substring unless regex is true, so a.b finds a.b and nothing else; a
+      regular expression that does not compile is refused, never matched against nothing. Each
+      match names its path and line number. glob narrows which files are read: without a slash
+      it matches the file's name anywhere, so *.rs is every Rust file; with one it matches the
+      whole workspace-relative path and * does not cross a separator. context answers that many
+      lines either side of each match under before and after, each with its own number (default
+      0, capped at 5; a larger ask answers 5 and says so in context and note). A line over 400
+      characters is cut and line_truncated says so. At most 200 matches are answered, fewer when
+      max_results says so; truncated says a match past that count exists or a file was too
+      large to search. A file over 1 MiB (1048576 bytes) is not searched: skipped_large_files
+      counts them and skipped_large_paths names the first 20. A binary file over 1 MiB is among
+      them; one of at most 1 MiB (not UTF-8, or holding a NUL byte), or an entry that is not a
+      regular file, is not searched and not reported. An entry named .git, target, node_modules, .venv or __pycache__ (a directory or a
+      file) is not searched unless path names it. The walk does not follow a link that leads out
+      of the workspace, and stops descending at depth 12, which depth_bound_reached reports.
+      Start the search lower down, or at the skipped entry, to reach past either. timeout_ms
+      bounds the call (default 10000, at most 60000; a larger ask is refused); at the deadline
+      the call answers the matches it had found, deadline_reached and truncated are true, and
+      note says the deadline was reached.
+    renderings: {claude: Grep, codex: grep, mcp: search_grep}
+    input:
+      - name: pattern
+        type: String
+        description: What to find; a literal substring, or a regular expression when regex is true. Must not be empty.
+      - name: path
+        type: Optional<String>
+        description: The directory or file to search, relative to the workspace root. Default the root itself.
+      - name: regex
+        type: Optional<Boolean>
+        description: Read pattern as a regular expression. Default false.
+      - name: glob
+        type: Optional<String>
+        description: Only files matching this glob; a name when it has no slash, a workspace-relative path when it has one.
+      - name: context
+        type: Optional<Integer>
+        description: Lines either side of each match, under before and after. Default 0; a larger ask than 5 is capped at 5.
+      - name: max_results
+        type: Optional<Integer>
+        description: The most matches to answer. Default 200; a larger ask is capped at 200.
+      - name: timeout_ms
+        type: Optional<Integer>
+        description: The wall-clock bound of the call in milliseconds. Default 10000; above 60000 is refused as search.InvalidInput.
+    output:
+      - name: pattern
+        type: String
+        description: The pattern as given.
+      - name: matches
+        type: List<search.Match>
+        description: The matching lines, in walk order and then line order.
+      - name: truncated
+        type: Boolean
+        description: A match past the answered count exists, a file was too large to search, or the deadline was reached before the search was done.
+      - name: depth_bound_reached
+        type: Boolean
+        description: The walk stopped descending at depth 12 somewhere, so files below it were not searched.
+      - name: skipped_large_files
+        type: Integer
+        description: How many files over 1 MiB were met and not searched.
+      - name: skipped_large_paths
+        type: List<String>
+        description: The workspace-relative paths of the first 20 files over 1 MiB that were not searched.
+      - name: regex
+        type: Optional<Boolean>
+        description: true when pattern was read as a regular expression; absent otherwise.
+      - name: glob
+        type: Optional<String>
+        description: The glob that narrowed the search, when one did; absent otherwise.
+      - name: context
+        type: Optional<Integer>
+        description: The context the matches carry, when the ask was over the cap of 5; absent otherwise.
+      - name: note
+        type: Optional<String>
+        description: Why context differs from the ask, when it does, and that the deadline was reached, when it was; absent otherwise.
+      - name: deadline_reached
+        type: Boolean
+        description: The call stopped at its deadline; matches holds the ones found by then.
+    outcomes:
+      - {name: searched, summary: The matches are answered.}
+      - {name: invalid-input, error: search.InvalidInput}
+      - {name: invalid-pattern, error: search.InvalidPattern}
+      - {name: invalid-glob, error: search.InvalidGlob}
+      - {name: not-found, error: search.NotFound}
+      - {name: outside-workspace, error: search.OutsideWorkspace}
+      - {name: io, error: search.Io}
+    profile:
+      effects: [read]
+      consequences: []
+      risk: low
+      idempotency: idempotent
+      preconditions: []
+      determinism: deterministic
+      bounds:
+        timeout_ms: {default: 10000, max: 60000}
+      paging: {limit: max_results, truncated: truncated}
+      requires: {binaries: [], env: [], settings: [], secrets: []}
+      subjects:
+        - {field: path, kind: path, pattern: "search.grep({path})"}
+      placement: local
+      capability: workspace.read
+      output: {untrusted: true, failure_as_result: true}
