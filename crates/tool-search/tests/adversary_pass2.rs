@@ -40,7 +40,7 @@ fn paths(output: &GrepOutput) -> Vec<&str> {
 /// did not (the runner's detail names only the first difference).
 fn passes(name: &str) {
     let scenarios =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/search/v1alpha1/scenarios");
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/search/v1alpha2/scenarios");
     let suite = Suite::read_dir(scenarios).expect("the search suite parses");
     let scratch = scratch();
     let report = run(&suite, contract(), scratch.path(), |root| {

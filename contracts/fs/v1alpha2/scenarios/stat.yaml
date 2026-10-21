@@ -1,0 +1,72 @@
+format: tool-conformance/1
+toolset: fs
+version: v1alpha2
+scenarios:
+  - name: stat-of-a-file-answers-its-size-and-digest
+    holds: [effects, bounds, subjects, output]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.stat, input: {path: a.txt}}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        kind: file
+        bytes: 8
+        sha256: {$sha256_of: a.txt}
+      files: {a.txt: unchanged}
+  - name: the-same-stat-a-second-time-answers-the-same
+    holds: [idempotency, determinism]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.stat, input: {path: a.txt}}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        kind: file
+        bytes: 8
+        sha256: {$sha256_of: a.txt}
+  - name: stat-of-a-directory-has-no-size-and-no-digest
+    holds: [output]
+    fixture:
+      files: {sub/a.txt: "x"}
+    call: {operation: fs.stat, input: {path: sub}}
+    expect:
+      outcome: ok
+      output:
+        path: sub
+        kind: directory
+        bytes: {$absent: true}
+        sha256: {$absent: true}
+  - name: stat-of-a-link-is-the-link-itself
+    holds: [output, subjects]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: fs.stat, input: {path: inner}}
+    expect:
+      outcome: ok
+      output:
+        path: inner
+        kind: symlink
+        bytes: {$absent: true}
+        sha256: {$absent: true}
+      files: {inner: unchanged, own.txt: unchanged}
+  - name: stat-of-the-root-is-a-directory
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "x"}
+    call: {operation: fs.stat, input: {path: "."}}
+    expect:
+      outcome: ok
+      output:
+        path: ""
+        kind: directory
+  - name: stat-of-a-missing-path-is-not-found
+    holds: [output, subjects]
+    fixture:
+      files: {a.txt: "x"}
+    call: {operation: fs.stat, input: {path: missing}}
+    expect:
+      error: fs.NotFound
+      output: {path: missing}

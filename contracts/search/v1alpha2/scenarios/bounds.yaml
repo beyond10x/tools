@@ -1,0 +1,192 @@
+format: tool-conformance/1
+toolset: search
+version: v1alpha2
+scenarios:
+  - name: a-cut-list-says-it-was-cut
+    holds: [paging, bounds]
+    fixture:
+      files:
+        a.txt: "needle\n"
+        b.txt: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle, max_results: 1}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: a.txt, line: 1, text: needle}
+        truncated: true
+  - name: exactly-max-results-matches-followed-by-lines-that-do-not-match-is-complete
+    holds: [paging]
+    fixture:
+      files:
+        a.txt: "needle\nneedle\nother\n"
+        b.txt: "other\n"
+    call: {operation: search.grep, input: {pattern: needle, max_results: 2}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: a.txt, line: 1}
+          - {path: a.txt, line: 2}
+        truncated: false
+  - name: max-results-zero-answers-no-match-and-says-one-was-there
+    holds: [paging]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, max_results: 0}}
+    expect:
+      outcome: ok
+      output:
+        matches: []
+        truncated: true
+  - name: more-than-200-matches-are-answered-as-200-and-truncated
+    holds: [bounds, paging]
+    fixture:
+      dir: fixtures/many-matches
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches: &two-hundred [
+          {line: 1}, {line: 2}, {line: 3}, {line: 4}, {line: 5}, {line: 6}, {line: 7}, {line: 8}, {line: 9}, {line: 10},
+          {line: 11}, {line: 12}, {line: 13}, {line: 14}, {line: 15}, {line: 16}, {line: 17}, {line: 18}, {line: 19}, {line: 20},
+          {line: 21}, {line: 22}, {line: 23}, {line: 24}, {line: 25}, {line: 26}, {line: 27}, {line: 28}, {line: 29}, {line: 30},
+          {line: 31}, {line: 32}, {line: 33}, {line: 34}, {line: 35}, {line: 36}, {line: 37}, {line: 38}, {line: 39}, {line: 40},
+          {line: 41}, {line: 42}, {line: 43}, {line: 44}, {line: 45}, {line: 46}, {line: 47}, {line: 48}, {line: 49}, {line: 50},
+          {line: 51}, {line: 52}, {line: 53}, {line: 54}, {line: 55}, {line: 56}, {line: 57}, {line: 58}, {line: 59}, {line: 60},
+          {line: 61}, {line: 62}, {line: 63}, {line: 64}, {line: 65}, {line: 66}, {line: 67}, {line: 68}, {line: 69}, {line: 70},
+          {line: 71}, {line: 72}, {line: 73}, {line: 74}, {line: 75}, {line: 76}, {line: 77}, {line: 78}, {line: 79}, {line: 80},
+          {line: 81}, {line: 82}, {line: 83}, {line: 84}, {line: 85}, {line: 86}, {line: 87}, {line: 88}, {line: 89}, {line: 90},
+          {line: 91}, {line: 92}, {line: 93}, {line: 94}, {line: 95}, {line: 96}, {line: 97}, {line: 98}, {line: 99}, {line: 100},
+          {line: 101}, {line: 102}, {line: 103}, {line: 104}, {line: 105}, {line: 106}, {line: 107}, {line: 108}, {line: 109}, {line: 110},
+          {line: 111}, {line: 112}, {line: 113}, {line: 114}, {line: 115}, {line: 116}, {line: 117}, {line: 118}, {line: 119}, {line: 120},
+          {line: 121}, {line: 122}, {line: 123}, {line: 124}, {line: 125}, {line: 126}, {line: 127}, {line: 128}, {line: 129}, {line: 130},
+          {line: 131}, {line: 132}, {line: 133}, {line: 134}, {line: 135}, {line: 136}, {line: 137}, {line: 138}, {line: 139}, {line: 140},
+          {line: 141}, {line: 142}, {line: 143}, {line: 144}, {line: 145}, {line: 146}, {line: 147}, {line: 148}, {line: 149}, {line: 150},
+          {line: 151}, {line: 152}, {line: 153}, {line: 154}, {line: 155}, {line: 156}, {line: 157}, {line: 158}, {line: 159}, {line: 160},
+          {line: 161}, {line: 162}, {line: 163}, {line: 164}, {line: 165}, {line: 166}, {line: 167}, {line: 168}, {line: 169}, {line: 170},
+          {line: 171}, {line: 172}, {line: 173}, {line: 174}, {line: 175}, {line: 176}, {line: 177}, {line: 178}, {line: 179}, {line: 180},
+          {line: 181}, {line: 182}, {line: 183}, {line: 184}, {line: 185}, {line: 186}, {line: 187}, {line: 188}, {line: 189}, {line: 190},
+          {line: 191}, {line: 192}, {line: 193}, {line: 194}, {line: 195}, {line: 196}, {line: 197}, {line: 198}, {line: 199}, {line: 200}
+        ]
+        truncated: true
+      files: {many.txt: unchanged}
+  - name: a-larger-ask-than-200-is-capped-at-200
+    holds: [bounds, paging]
+    fixture:
+      dir: fixtures/many-matches
+    call: {operation: search.grep, input: {pattern: needle, max_results: 1000}}
+    expect:
+      outcome: ok
+      output:
+        matches: *two-hundred
+        truncated: true
+  - name: a-file-over-one-mebibyte-is-not-searched-and-is-named
+    holds: [bounds, output, effects]
+    fixture:
+      dir: fixtures/large-files
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: exact.txt, line: 1, line_truncated: true}
+        truncated: true
+        skipped_large_files: 1
+        skipped_large_paths: [over.txt]
+      files: {exact.txt: unchanged, over.txt: unchanged}
+  - name: a-walk-stopped-by-the-depth-bound-says-so
+    holds: [bounds, output]
+    fixture:
+      files:
+        d0/d1/d2/d3/d4/d5/d6/d7/d8/d9/d10/d11/last.txt: "needle\n"
+        d0/d1/d2/d3/d4/d5/d6/d7/d8/d9/d10/d11/d12/past.txt: "needle\n"
+        d0/d1/d2/d3/d4/d5/d6/d7/d8/d9/d10/d11/d12/d13/buried.txt: "needle\n"
+        near.txt: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: d0/d1/d2/d3/d4/d5/d6/d7/d8/d9/d10/d11/last.txt, line: 1}
+          - {path: near.txt, line: 1}
+        truncated: false
+        depth_bound_reached: true
+  - name: a-walk-that-reached-the-bottom-says-the-bound-did-not-bite
+    holds: [bounds, output]
+    fixture:
+      files:
+        a/b/near.txt: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: a/b/near.txt, line: 1}
+        depth_bound_reached: false
+  - name: a-match-on-a-long-line-is-cut-at-400-characters-and-says-so
+    holds: [bounds, output]
+    fixture:
+      dir: fixtures/long-line
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - path: long.txt
+            line: 1
+            text: &cut "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+            line_truncated: true
+          - {path: long.txt, line: 2, text: needle, line_truncated: false}
+  - name: a-line-of-context-is-cut-the-same-way
+    holds: [bounds, output]
+    fixture:
+      dir: fixtures/long-line
+    call: {operation: search.grep, input: {pattern: needle, context: 1}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - line: 1
+            text: *cut
+            line_truncated: true
+            before: []
+            after: [{line: 2, text: needle, line_truncated: false}]
+          - line: 2
+            text: needle
+            line_truncated: false
+            before: [{line: 1, text: *cut, line_truncated: true}]
+            after: [{line: 3, text: *cut, line_truncated: true}]
+  - name: a-context-above-five-is-capped-and-the-reply-says-so
+    holds: [bounds, output]
+    fixture:
+      files: {a.txt: "1\n2\n3\n4\n5\n6\n7\n8\nneedle\n"}
+    call: {operation: search.grep, input: {pattern: needle, context: 40}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - line: 9
+            before:
+              - {line: 4, text: "4"}
+              - {line: 5, text: "5"}
+              - {line: 6, text: "6"}
+              - {line: 7, text: "7"}
+              - {line: 8, text: "8"}
+            after: []
+        context: 5
+        note: {$contains: "40"}
+  - name: a-context-within-the-cap-is-not-echoed
+    holds: [bounds, output]
+    fixture:
+      files: {a.txt: "1\n2\n3\n4\n5\n6\n7\n8\nneedle\n"}
+    call: {operation: search.grep, input: {pattern: needle, context: 5}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - line: 9
+            before: [{line: 4}, {line: 5}, {line: 6}, {line: 7}, {line: 8}]
+            after: []
+        context: {$absent: true}
+        note: {$absent: true}

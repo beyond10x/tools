@@ -1,0 +1,25 @@
+format: tool-conformance/1
+toolset: fs
+version: v1alpha2
+scenarios:
+  - name: adversary-a-path-that-climbs-out-is-refused-for-the-path-whatever-its-deadline-asks
+    holds: [bounds, subjects]
+    call: {operation: fs.read, input: {path: ../x.txt, timeout_ms: 60001}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: ../x.txt}
+  - name: adversary-a-negative-deadline-is-not-the-operations-input
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "one\n"}
+    call: {operation: fs.read, input: {path: a.txt, timeout_ms: -1}}
+    expect:
+      error: fs.InvalidInput
+      files: {a.txt: unchanged}
+  - name: adversary-a-deadline-given-as-a-string-is-not-the-operations-input
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "one\n"}
+    call: {operation: fs.stat, input: {path: a.txt, timeout_ms: "10"}}
+    expect:
+      error: fs.InvalidInput

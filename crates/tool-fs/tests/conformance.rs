@@ -1,4 +1,4 @@
-//! The `fs` v1alpha1 conformance suite runs against the intact [`Fs`] and passes, including the
+//! The `fs` v1alpha2 conformance suite runs against the intact [`Fs`] and passes, including the
 //! check that the schemas derived from the crate's types equal the contract's field lists; and
 //! the contract the crate carries is the one under `contracts/` and validates.
 
@@ -9,7 +9,7 @@ use tool_contract::{Contract, validate};
 use tool_fs::{Fs, contract};
 
 fn contract_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/fs/v1alpha1")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/fs/v1alpha2")
 }
 
 fn suite() -> Suite {

@@ -683,3 +683,167 @@ fn the_workspace_must_be_a_directory() {
         inside.path().canonicalize().expect("canonical")
     );
 }
+
+// The deadline (`search` v1alpha2). A deadline of 0 is held by the suite; these stop the search
+// at a known check with `Deadline::after_checks`, so each shows the deadline is checked inside
+// the walk and the line scan and not only before them.
+
+#[test]
+fn the_declared_timeout_bound_is_the_one_enforced() {
+    for operation in &contract().operations {
+        let bound = operation
+            .profile
+            .bounds
+            .timeout_ms
+            .expect("every operation declares timeout_ms");
+        assert_eq!(
+            bound.default,
+            Some(DEFAULT_TIMEOUT_MS),
+            "{}",
+            operation.name
+        );
+        assert_eq!(bound.max, Some(MAX_TIMEOUT_MS), "{}", operation.name);
+    }
+}
+
+#[test]
+fn a_timeout_above_the_maximum_is_refused_after_the_pattern_the_glob_and_the_path() {
+    // Wave w4 D3: the pattern, the glob and the path are judged first, because those are the
+    // refusals a governor reads; `timeout_ms` above its maximum only on an input that is
+    // otherwise the operation's.
+    let dir = workspace();
+    fs::write(dir.path().join("a.txt"), "needle\n").expect("the file is written");
+    let search = reading(dir.path());
+    let grep = |input: GrepInput| {
+        search
+            .grep(&GrepInput {
+                timeout_ms: Some(MAX_TIMEOUT_MS + 1),
+                ..input
+            })
+            .map(|_| ())
+            .expect_err("refused")
+    };
+    let names: Vec<&str> = [
+        grep(GrepInput::new("")),
+        grep(GrepInput {
+            regex: Some(true),
+            ..GrepInput::new("fn (alpha")
+        }),
+        grep(GrepInput {
+            glob: Some(String::new()),
+            ..GrepInput::new("needle")
+        }),
+        grep(GrepInput {
+            glob: Some("a[b".to_owned()),
+            ..GrepInput::new("needle")
+        }),
+        grep(GrepInput {
+            path: Some("..".to_owned()),
+            ..GrepInput::new("needle")
+        }),
+        grep(GrepInput {
+            path: Some("missing".to_owned()),
+            ..GrepInput::new("needle")
+        }),
+    ]
+    .iter()
+    .map(SearchError::name)
+    .collect();
+    assert_eq!(
+        names,
+        [
+            "search.InvalidPattern",
+            "search.InvalidPattern",
+            "search.InvalidGlob",
+            "search.InvalidGlob",
+            "search.OutsideWorkspace",
+            "search.NotFound",
+        ]
+    );
+
+    let refusal = grep(GrepInput::new("needle"));
+    assert_eq!(refusal.name(), "search.InvalidInput");
+    assert_eq!(refusal.fields(), json!({}));
+    assert!(refusal.to_string().contains("60000"), "{refusal}");
+}
+
+#[test]
+fn a_search_whose_deadline_passes_between_lines_answers_the_matches_before_it() {
+    let dir = workspace();
+    fs::write(
+        dir.path().join("three.txt"),
+        "needle 1\nneedle 2\nneedle 3\n",
+    )
+    .expect("the file is written");
+    // The walk's check, then one before each line: the third passes, before line 2.
+    let found = reading(dir.path())
+        .grep_within(
+            &GrepInput {
+                path: Some("three.txt".to_owned()),
+                ..GrepInput::new("needle")
+            },
+            &Deadline::after_checks(2),
+        )
+        .expect("the search answers");
+    let lines: Vec<u64> = found.matches.iter().map(|hit| hit.line).collect();
+    assert_eq!(lines, [1]);
+    assert!(found.truncated);
+    assert!(found.deadline_reached);
+    assert!(
+        found
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("deadline")),
+        "{:?}",
+        found.note
+    );
+}
+
+#[test]
+fn a_search_whose_deadline_passes_in_the_walk_answers_the_files_before_it() {
+    let dir = workspace();
+    for name in ["a.txt", "b.txt"] {
+        fs::write(dir.path().join(name), "needle\n").expect("the file is written");
+    }
+    // The frame's check, one after each entry listed, one before `a.txt`, one before its line,
+    // and the sixth before `b.txt`.
+    let found = reading(dir.path())
+        .grep_within(&GrepInput::new("needle"), &Deadline::after_checks(5))
+        .expect("the search answers");
+    assert_eq!(paths(&found), ["a.txt"]);
+    assert!(found.truncated);
+    assert!(found.deadline_reached);
+}
+
+#[test]
+fn a_capped_context_and_a_deadline_are_both_in_the_note() {
+    let dir = workspace();
+    fs::write(dir.path().join("a.txt"), "needle\n").expect("the file is written");
+    let found = reading(dir.path())
+        .grep_within(
+            &GrepInput {
+                context: Some(9),
+                ..GrepInput::new("needle")
+            },
+            &Deadline::after_checks(0),
+        )
+        .expect("the search answers");
+    let note = found.note.expect("a note");
+    assert!(note.contains("`context` was 9"), "{note}");
+    assert!(note.contains("deadline"), "{note}");
+    assert_eq!(found.context, Some(MAX_SEARCH_CONTEXT));
+    assert_eq!(found.matches, []);
+}
+
+#[test]
+fn a_search_inside_its_deadline_answers_deadline_reached_false() {
+    let dir = workspace();
+    fs::write(dir.path().join("a.txt"), "needle\n").expect("the file is written");
+    let found = reading(dir.path())
+        .grep(&GrepInput::new("needle"))
+        .expect("the search answers");
+    assert_eq!(paths(&found), ["a.txt"]);
+    assert!(!found.deadline_reached);
+    assert!(!found.truncated);
+    assert_eq!(found.note, None);
+}

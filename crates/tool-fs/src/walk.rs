@@ -9,6 +9,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::deadline::Deadline;
 use crate::error::FsError;
 
 /// How deep under its starting directory a walk descends before it stops: a directory this many
@@ -42,7 +43,8 @@ thread_local! {
 pub struct Walked {
     /// [`MAX_WALK_DEPTH`] stopped a descent somewhere in the part of the tree walked.
     pub bounded: bool,
-    /// `visit` answered `false`: nothing after that entry was walked, in this frame or any above.
+    /// `visit` answered `false`, or the deadline of [`walk_within`] passed: nothing after that
+    /// entry was walked, in this frame or any above.
     pub stopped: bool,
 }
 
@@ -79,6 +81,29 @@ pub fn walk(
     depth: usize,
     visit: &mut dyn FnMut(&Path) -> bool,
 ) -> Walked {
+    walk_within(directory, boundary, depth, &Deadline::never(), visit)
+}
+
+/// [`walk`], stopped by `deadline`.
+///
+/// The deadline is checked when each frame starts, before anything of it is read, so a
+/// deadline that has already passed visits nothing; after every entry taken from a directory
+/// listing; and before every entry is looked at. Where it passed, the walk stops in every frame
+/// as a `visit` that answered `false` stops it ([`Walked::stopped`]), and the caller reads
+/// [`Deadline::reached`] to tell the two apart.
+pub fn walk_within(
+    directory: &Path,
+    boundary: &Path,
+    depth: usize,
+    deadline: &Deadline,
+    visit: &mut dyn FnMut(&Path) -> bool,
+) -> Walked {
+    if deadline.passed() {
+        return Walked {
+            bounded: false,
+            stopped: true,
+        };
+    }
     if depth > MAX_WALK_DEPTH {
         return Walked {
             bounded: true,
@@ -97,10 +122,22 @@ pub fn walk(
     let Ok(entries) = fs::read_dir(directory) else {
         return Walked::default();
     };
-    let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
-    entries.sort_by_key(fs::DirEntry::file_name);
     let mut walked = Walked::default();
+    let mut listed = Vec::new();
+    for entry in entries.filter_map(Result::ok) {
+        listed.push(entry);
+        if deadline.passed() {
+            walked.stopped = true;
+            return walked;
+        }
+    }
+    let mut entries = listed;
+    entries.sort_by_key(fs::DirEntry::file_name);
     for entry in entries {
+        if deadline.passed() {
+            walked.stopped = true;
+            return walked;
+        }
         #[cfg(test)]
         VISITED.with(|visited| visited.set(visited.get() + 1));
         let path = entry.path();
@@ -113,7 +150,7 @@ pub fn walk(
             if SKIPPED.contains(&name.as_ref()) {
                 continue;
             }
-            let below = walk(&path, boundary, depth + 1, visit);
+            let below = walk_within(&path, boundary, depth + 1, deadline, visit);
             walked.bounded |= below.bounded;
             walked.stopped = below.stopped;
         } else {

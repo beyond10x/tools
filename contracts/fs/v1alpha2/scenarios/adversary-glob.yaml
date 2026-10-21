@@ -1,0 +1,45 @@
+format: tool-conformance/1
+toolset: fs
+version: v1alpha2
+scenarios:
+  - name: adversary-a-glob-with-exactly-max-results-matches-is-not-truncated
+    holds: [paging]
+    fixture:
+      files: {a.rs: "x", b.txt: "x"}
+    call: {operation: fs.glob, input: {glob: "*.rs", max_results: 1}}
+    expect:
+      outcome: ok
+      output:
+        paths: [a.rs]
+        truncated: false
+        depth_bound_reached: false
+  - name: adversary-a-file-twelve-directories-deep-is-found-and-one-under-the-thirteenth-is-not
+    holds: [bounds]
+    fixture:
+      files:
+        d1/d2/d3/d4/d5/d6/d7/d8/d9/d10/d11/d12/at-twelve.txt: "x"
+        d1/d2/d3/d4/d5/d6/d7/d8/d9/d10/d11/d12/d13/at-thirteen.txt: "x"
+    call: {operation: fs.glob, input: {glob: "*.txt"}}
+    expect:
+      outcome: ok
+      output:
+        paths: [d1/d2/d3/d4/d5/d6/d7/d8/d9/d10/d11/d12/at-twelve.txt]
+        truncated: false
+        depth_bound_reached: true
+  - name: adversary-every-named-machine-directory-is-skipped
+    holds: [output]
+    fixture:
+      files:
+        ".git/hooks/x.rs": "x"
+        "target/x.rs": "x"
+        "node_modules/x.rs": "x"
+        ".venv/x.rs": "x"
+        "__pycache__/x.rs": "x"
+        "src/x.rs": "x"
+    call: {operation: fs.glob, input: {glob: "*.rs"}}
+    expect:
+      outcome: ok
+      output:
+        paths: [src/x.rs]
+        truncated: false
+        depth_bound_reached: false

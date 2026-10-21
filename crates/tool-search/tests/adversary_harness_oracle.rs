@@ -497,11 +497,21 @@ fn scratch() -> tempfile::TempDir {
 
 /// The answers agree, or the call is one of the documented changes and the part they share agrees.
 fn compare(case: &str, input: &GrepInput, harness: Result<Value, String>, ours: Option<Value>) {
-    let (harness, ours) = match (harness, ours) {
+    let (harness, mut ours) = match (harness, ours) {
         (Ok(harness), Some(ours)) => (harness, ours),
         (Err(_), None) => return,
         (harness, ours) => panic!("{case}: {input:?}: harness {harness:?}, search {ours:?}"),
     };
+    // `deadline_reached` is v1alpha2's, which harness never answered: no seeded call comes near
+    // the default deadline, so it is false here, and then the rest is compared as before.
+    let reached = ours
+        .as_object_mut()
+        .and_then(|fields| fields.remove("deadline_reached"));
+    assert_eq!(
+        reached,
+        Some(Value::Bool(false)),
+        "{case}: {input:?}: deadline_reached"
+    );
     let limit = input
         .max_results
         .map_or(MAX_GREP_RESULTS, |most| {
