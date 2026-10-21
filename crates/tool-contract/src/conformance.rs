@@ -1,6 +1,8 @@
 //! The `tool-conformance/1` suite ([`Suite`]), the [`Toolset`] an implementation exposes, and
-//! [`run`], which lays out each scenario's fixture in its own workspace, invokes, matches the
-//! result and the tree afterwards, and checks the derived schemas against the contract once.
+//! [`run_with`] (and [`run`] over it), which lays out each scenario's fixture in its own
+//! workspace, serves its HTTP routes on loopback, builds a toolset from the scenario's host
+//! configuration, makes its call or calls, matches each result and the tree afterwards, and
+//! checks the derived schemas against the contract once.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -10,7 +12,9 @@ use std::path::{Path, PathBuf};
 
 use schemars::Schema;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
+
+mod serve;
 
 use crate::digest::sha256_hex;
 use crate::document::{Contract, Profile, at};
@@ -242,21 +246,36 @@ impl Suite {
             if !seen.insert(scenario.name.as_str()) {
                 return Err(refuse("duplicate scenario name"));
             }
-            match (&scenario.expect.outcome, &scenario.expect.error) {
-                (Some(outcome), None) if outcome == "ok" => {}
-                (Some(outcome), None) => {
-                    return Err(refuse(&format!(
-                        "expect.outcome is {outcome:?}, only ok is allowed"
-                    )));
+            if let Some(problem) = &scenario.refusal {
+                return Err(refuse(problem));
+            }
+            for (path, route) in &scenario.fixture.serve {
+                if let Some(problem) = serve::path_problem(path) {
+                    return Err(refuse(&format!("fixture.serve: route {path:?} {problem}")));
                 }
-                (None, Some(_)) => {}
-                (Some(_), Some(_)) => {
-                    return Err(refuse("expect names both outcome: ok and error"));
+                if let Some(problem) = serve::route_problem(route) {
+                    return Err(refuse(&format!("fixture.serve: route {path} {problem}")));
                 }
-                (None, None) => return Err(refuse("expect names neither outcome: ok nor error")),
+            }
+            if let Some(problem) = serve::shared_log(&scenario.fixture.serve) {
+                return Err(refuse(&format!("fixture.serve: {problem}")));
+            }
+            for step in scenario.steps() {
+                check_expect(step.expect)
+                    .map_err(|problem| refuse(&format!("{}{problem}", step.at)))?;
             }
         }
         Ok(())
+    }
+}
+
+fn check_expect(expect: &Expect) -> Result<(), String> {
+    match (&expect.outcome, &expect.error) {
+        (Some(outcome), None) if outcome == "ok" => Ok(()),
+        (Some(outcome), None) => Err(format!("expect.outcome is {outcome:?}, only ok is allowed")),
+        (None, Some(_)) => Ok(()),
+        (Some(_), Some(_)) => Err("expect names both outcome: ok and error".to_string()),
+        (None, None) => Err("expect names neither outcome: ok nor error".to_string()),
     }
 }
 
@@ -268,25 +287,127 @@ fn is_directory_name(name: &str) -> bool {
         && !name.contains(['/', '\\', '\0'])
 }
 
-/// One scenario: a fixture tree, one call, and what to expect of the result and the tree.
+/// One scenario: a fixture tree, the host configuration its toolset is built with, one call (or
+/// an ordered list of calls on one toolset), and what to expect of each result and the tree.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "ScenarioRepr")]
 pub struct Scenario {
     /// The name; also the workspace directory under the scratch root.
     pub name: String,
-    /// The profile properties this scenario is evidence for.
-    #[serde(default)]
+    /// The profile properties this scenario is evidence for; in a `calls` scenario each entry
+    /// carries its own and this is empty.
     pub holds: Vec<String>,
-    /// The tree laid out before the call.
-    #[serde(default)]
+    /// Handed to the toolset factory ([`ScenarioContext::host`]), never to an operation, after
+    /// `{{serve}}` and `{{workspace}}` are substituted in its strings.
+    pub host: Map<String, Value>,
+    /// The tree laid out before the call, and the routes served while the scenario runs.
     pub fixture: Fixture,
-    /// The call.
+    /// The call; in a `calls` scenario, the operation and input of its first entry.
     pub call: Call,
-    /// What to expect.
+    /// The calls of a `calls` scenario, in order, on one toolset; empty for a `call` scenario.
+    pub calls: Vec<Step>,
+    /// What to expect of the call; in a `calls` scenario each entry carries its own and this is
+    /// empty.
     pub expect: Expect,
+    /// Why the scenario's keys are refused at parse (`call` and `calls` both or neither, or a key
+    /// that belongs on each entry of `calls`).
+    refusal: Option<String>,
 }
 
-/// The tree a scenario starts from.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScenarioRepr {
+    name: String,
+    #[serde(default)]
+    holds: Option<Vec<String>>,
+    #[serde(default)]
+    host: Map<String, Value>,
+    #[serde(default)]
+    fixture: Fixture,
+    #[serde(default)]
+    call: Option<Call>,
+    #[serde(default)]
+    calls: Option<Vec<Step>>,
+    #[serde(default)]
+    expect: Option<Expect>,
+}
+
+impl From<ScenarioRepr> for Scenario {
+    fn from(repr: ScenarioRepr) -> Self {
+        let refusal = match (&repr.call, &repr.calls) {
+            (Some(_), Some(_)) => Some("names both call and calls"),
+            (None, None) => Some("names neither call nor calls"),
+            (None, Some(calls)) if calls.is_empty() => Some("calls is empty"),
+            (None, Some(_)) if repr.expect.is_some() => {
+                Some("expect belongs on each entry of calls, not on the scenario")
+            }
+            (None, Some(_)) if repr.holds.is_some() => {
+                Some("holds belongs on each entry of calls, not on the scenario")
+            }
+            (Some(_), None) if repr.expect.is_none() => Some("expect is missing"),
+            _ => None,
+        };
+        let calls = repr.calls.unwrap_or_default();
+        let call = repr.call.unwrap_or_else(|| match calls.first() {
+            Some(first) => Call {
+                operation: first.operation.clone(),
+                input: first.input.clone(),
+            },
+            None => Call {
+                operation: String::new(),
+                input: empty_object(),
+            },
+        });
+        Self {
+            name: repr.name,
+            holds: repr.holds.unwrap_or_default(),
+            host: repr.host,
+            fixture: repr.fixture,
+            call,
+            calls,
+            expect: repr.expect.unwrap_or_default(),
+            refusal: refusal.map(ToOwned::to_owned),
+        }
+    }
+}
+
+/// One call a scenario makes, as the runner sees it whichever key named it.
+struct View<'a> {
+    /// `""` for a `call` scenario, `calls[<i>]: ` for an entry of `calls`.
+    at: String,
+    operation: &'a str,
+    input: &'a Value,
+    holds: &'a [String],
+    expect: &'a Expect,
+}
+
+impl Scenario {
+    /// Its calls in order: the one `call`, or each entry of `calls`.
+    fn steps(&self) -> Vec<View<'_>> {
+        if self.calls.is_empty() {
+            return vec![View {
+                at: String::new(),
+                operation: &self.call.operation,
+                input: &self.call.input,
+                holds: &self.holds,
+                expect: &self.expect,
+            }];
+        }
+        self.calls
+            .iter()
+            .enumerate()
+            .map(|(i, step)| View {
+                at: format!("calls[{i}]: "),
+                operation: &step.operation,
+                input: &step.input,
+                holds: &step.holds,
+                expect: &step.expect,
+            })
+            .collect()
+    }
+}
+
+/// The tree a scenario starts from, and the HTTP routes served while it runs.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Fixture {
@@ -296,6 +417,35 @@ pub struct Fixture {
     /// A directory to copy in first, relative to the suite's [`Suite::base`].
     #[serde(default)]
     pub dir: Option<PathBuf>,
+    /// Routes by path (starting with `/`), served on `127.0.0.1:<ephemeral>` over plain HTTP/1.1
+    /// while the scenario runs; `{{serve}}` is their base URL.
+    #[serde(default)]
+    pub serve: BTreeMap<String, Route>,
+}
+
+/// What a served route answers. Each request it receives is appended to
+/// `.serve/<path with / as _>.jsonl` in the workspace as `{"method", "path", "headers", "body"}`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Route {
+    /// The status; `200`, or `302` with `redirect`.
+    #[serde(default)]
+    pub status: Option<u16>,
+    /// Response headers.
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    /// The body text.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// A file whose bytes are the body, relative to the suite's [`Suite::base`].
+    #[serde(default)]
+    pub body_file: Option<PathBuf>,
+    /// The `Location` header.
+    #[serde(default)]
+    pub redirect: Option<String>,
+    /// How long to wait before answering.
+    #[serde(default)]
+    pub delay_ms: Option<u64>,
 }
 
 /// The one call a scenario makes.
@@ -304,9 +454,26 @@ pub struct Fixture {
 pub struct Call {
     /// The operation.
     pub operation: String,
-    /// The input, as JSON.
+    /// The input, as JSON; `{{serve}}`, `{{workspace}}` and `{{calls.<n>.output.<path>}}` are
+    /// substituted in its strings.
     #[serde(default = "empty_object")]
     pub input: Value,
+}
+
+/// One entry of a scenario's `calls`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Step {
+    /// The operation.
+    pub operation: String,
+    /// The input, as JSON, substituted as [`Call::input`] is.
+    #[serde(default = "empty_object")]
+    pub input: Value,
+    /// The profile properties this entry is evidence for, on its operation.
+    #[serde(default)]
+    pub holds: Vec<String>,
+    /// What to expect of this entry.
+    pub expect: Expect,
 }
 
 fn empty_object() -> Value {
@@ -342,14 +509,24 @@ pub enum FileExpect {
     Equals(String),
     /// The file's SHA-256 is this hex digest.
     Sha256(String),
+    /// The file holds this many lines (`{$lines: n}`); a last line needs no newline.
+    Lines(u64),
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum FileExpectRepr {
     Keyword(FileKeyword),
-    Equals { equals: String },
-    Sha256 { sha256: String },
+    Equals {
+        equals: String,
+    },
+    Sha256 {
+        sha256: String,
+    },
+    Lines {
+        #[serde(rename = "$lines")]
+        lines: u64,
+    },
 }
 
 #[derive(Deserialize)]
@@ -366,6 +543,7 @@ impl<'de> Deserialize<'de> for FileExpect {
             FileExpectRepr::Keyword(FileKeyword::Absent) => Self::Absent,
             FileExpectRepr::Equals { equals } => Self::Equals(equals),
             FileExpectRepr::Sha256 { sha256 } => Self::Sha256(sha256),
+            FileExpectRepr::Lines { lines } => Self::Lines(lines),
         })
     }
 }
@@ -396,6 +574,38 @@ pub trait Toolset {
     fn invoke(&self, operation: &str, input: &Value) -> Outcome;
 }
 
+/// What the runner hands the toolset factory for one scenario.
+#[derive(Debug, Clone, Copy)]
+pub struct ScenarioContext<'a> {
+    /// The scenario's workspace, its fixture laid out.
+    pub workspace: &'a Path,
+    /// The scenario's `host` map, `{{serve}}` and `{{workspace}}` substituted; empty when it
+    /// names none. Never passed to an operation.
+    pub host: &'a Map<String, Value>,
+    /// The base URL of the scenario's served routes (`http://127.0.0.1:<port>`), when it has
+    /// any.
+    pub served: Option<&'a str>,
+}
+
+/// What a toolset factory could not find: the run fails naming it, and no scenario counts as
+/// passed. There is no skipped state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Missing {
+    /// A program the toolset starts, by name.
+    Program(String),
+    /// A setting the toolset reads (an environment variable, a host key), by name.
+    Setting(String),
+}
+
+impl fmt::Display for Missing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Program(name) => write!(f, "program {name}"),
+            Self::Setting(name) => write!(f, "setting {name}"),
+        }
+    }
+}
+
 /// The result of one scenario.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioResult {
@@ -416,12 +626,16 @@ pub struct Report {
     pub scenarios: Vec<ScenarioResult>,
     /// Derived schemas that differ from the contract, one line each.
     pub schema_mismatches: Vec<String>,
+    /// What the toolset factory reported missing, one line each; when any, no scenario passed.
+    pub missing: Vec<String>,
 }
 
 impl Report {
-    /// Whether the suite ran, every scenario passed and every schema matched.
+    /// Whether the suite ran, nothing was missing, every scenario passed and every schema
+    /// matched.
     pub fn passed(&self) -> bool {
         self.refused.is_empty()
+            && self.missing.is_empty()
             && self.schema_mismatches.is_empty()
             && self.scenarios.iter().all(|s| s.passed)
     }
@@ -437,6 +651,9 @@ impl fmt::Display for Report {
         for line in &self.refused {
             writeln!(f, "refused: {line}")?;
         }
+        for line in &self.missing {
+            writeln!(f, "missing: {line}")?;
+        }
         for result in &self.scenarios {
             if result.passed {
                 writeln!(f, "ok   {}", result.name)?;
@@ -451,6 +668,9 @@ impl fmt::Display for Report {
         write!(f, "{passed} of {} scenarios passed", self.scenarios.len())?;
         if !self.refused.is_empty() {
             write!(f, ", suite refused ({})", self.refused.len())?;
+        }
+        if !self.missing.is_empty() {
+            write!(f, ", {} missing", self.missing.len())?;
         }
         if !self.schema_mismatches.is_empty() {
             write!(f, ", {} schema mismatches", self.schema_mismatches.len())?;
@@ -508,38 +728,41 @@ pub fn coverage(suite: &Suite, contract: &Contract) -> Result<(), Vec<String>> {
         ));
     }
     for scenario in &suite.scenarios {
-        match contract.operation(&scenario.call.operation) {
-            None => refused.push(format!(
-                "{}: call: {} is not an operation of {}",
-                scenario.name, scenario.call.operation, contract.toolset
-            )),
-            Some(op) => {
-                if let Some(error) = &scenario.expect.error
-                    && !op.names_error(error)
-                {
-                    refused.push(format!(
-                        "{}: expect: {error} is not an outcome of {}",
-                        scenario.name, op.name
-                    ));
-                }
-                if let Some(input) = scenario.call.input.as_object() {
-                    for key in input.keys().filter(|key| !op.has_input(key)) {
+        for step in scenario.steps() {
+            let (name, at) = (&scenario.name, &step.at);
+            let call = if at.is_empty() { "call: " } else { at.as_str() };
+            match contract.operation(step.operation) {
+                None => refused.push(format!(
+                    "{name}: {call}{} is not an operation of {}",
+                    step.operation, contract.toolset
+                )),
+                Some(op) => {
+                    if let Some(error) = &step.expect.error
+                        && !op.names_error(error)
+                    {
                         refused.push(format!(
-                            "{}: call: {key} is not an input field of {}",
-                            scenario.name, op.name
+                            "{name}: {at}expect: {error} is not an outcome of {}",
+                            op.name
                         ));
+                    }
+                    if let Some(input) = step.input.as_object() {
+                        for key in input.keys().filter(|key| !op.has_input(key)) {
+                            refused.push(format!(
+                                "{name}: {call}{key} is not an input field of {}",
+                                op.name
+                            ));
+                        }
                     }
                 }
             }
-        }
-        for held in &scenario.holds {
-            let known =
-                BEHAVIOURAL.contains(&held.as_str()) || DECLARATIVE.contains(&held.as_str());
-            if !known {
-                refused.push(format!(
-                    "{}: holds: {held} is not a profile property",
-                    scenario.name
-                ));
+            for held in step.holds {
+                let known =
+                    BEHAVIOURAL.contains(&held.as_str()) || DECLARATIVE.contains(&held.as_str());
+                if !known {
+                    refused.push(format!(
+                        "{name}: {at}holds: {held} is not a profile property"
+                    ));
+                }
             }
         }
     }
@@ -548,7 +771,8 @@ pub fn coverage(suite: &Suite, contract: &Contract) -> Result<(), Vec<String>> {
             let held = suite
                 .scenarios
                 .iter()
-                .any(|s| s.call.operation == op.name && s.holds.iter().any(|h| h == property));
+                .flat_map(Scenario::steps)
+                .any(|step| step.operation == op.name && step.holds.iter().any(|h| h == property));
             if !held {
                 refused.push(format!("{}: {property}: no scenario holds it", op.name));
             }
@@ -561,33 +785,108 @@ pub fn coverage(suite: &Suite, contract: &Contract) -> Result<(), Vec<String>> {
     }
 }
 
-/// Runs `suite` against the toolset `make` builds over each scenario's workspace under `scratch`.
-///
-/// A suite [`coverage`] refuses is reported as refused and runs nothing. Otherwise each scenario
-/// gets `<scratch>/<name>/` as a fresh workspace with its fixture laid out, the call is made,
-/// `expect` is matched, the file post-conditions are checked; then the toolset's derived schemas
-/// are checked against the contract once, over `<scratch>/.schemas/`.
+/// Runs `suite` against the toolset `make` builds over each scenario's workspace under `scratch`:
+/// [`run_with`] for a factory that needs only the workspace and never reports anything missing.
 pub fn run(
     suite: &Suite,
     contract: &Contract,
     scratch: &Path,
     make: impl Fn(&Path) -> Box<dyn Toolset>,
 ) -> Report {
+    run_with(suite, contract, scratch, |context: &ScenarioContext<'_>| {
+        Ok(make(context.workspace))
+    })
+}
+
+/// Runs `suite` against the toolset `make` builds for each scenario under `scratch`.
+///
+/// A suite [`coverage`] refuses is reported as refused and runs nothing. Otherwise each scenario
+/// gets `<scratch>/<name>/` as a fresh workspace with its fixture laid out and its routes served,
+/// `make` builds one toolset from the [`ScenarioContext`], and the call (or each of `calls`, in
+/// order, on that one toolset) is made, its `expect` matched and its file post-conditions
+/// checked; the server stops when the scenario ends. Then the toolset's derived schemas are
+/// checked against the contract once, with a toolset built from the context of the first
+/// scenario whose factory was called (its workspace and its substituted `host`, no `served`).
+/// When none was, it is built with an empty `host` over `<scratch>/.schemas/`, and a [`Missing`]
+/// from that build is reported only for a suite with no scenario.
+///
+/// When `make` reports something [`Missing`], the report names it and no scenario counts as
+/// passed.
+pub fn run_with(
+    suite: &Suite,
+    contract: &Contract,
+    scratch: &Path,
+    make: impl Fn(&ScenarioContext<'_>) -> Result<Box<dyn Toolset>, Missing>,
+) -> Report {
     let mut report = Report::default();
     if let Err(refused) = coverage(suite, contract) {
         report.refused = refused;
         return report;
     }
+    let mut missing: Vec<String> = Vec::new();
+    let mut note = |what: &Missing| {
+        let line = what.to_string();
+        if !missing.contains(&line) {
+            missing.push(line.clone());
+        }
+        line
+    };
+    let mut reached: Reached = None;
     for scenario in &suite.scenarios {
-        let detail = run_scenario(suite, contract, scenario, scratch, &make).err();
+        let keep = if reached.is_none() {
+            Some(&mut reached)
+        } else {
+            None
+        };
+        let detail = match run_scenario(suite, contract, scenario, scratch, &make, keep) {
+            Ok(()) => None,
+            Err(Failure::Detail(detail)) => Some(detail),
+            Err(Failure::Missing(what)) => Some(format!("the toolset is missing {}", note(&what))),
+        };
         report.scenarios.push(ScenarioResult {
             name: scenario.name.clone(),
             passed: detail.is_none(),
             detail: detail.unwrap_or_default(),
         });
     }
-    report.schema_mismatches = check_schemas(contract, &scratch.join(".schemas"), &make);
+    let built = reached.is_some();
+    let (workspace, host) = reached.unwrap_or_else(|| (scratch.join(".schemas"), Map::new()));
+    match check_schemas(contract, &workspace, &host, &make) {
+        Ok(mismatches) => report.schema_mismatches = mismatches,
+        Err(what) if built || suite.scenarios.is_empty() => {
+            note(&what);
+        }
+        Err(_) => {}
+    }
+    if !missing.is_empty() {
+        let all = missing.join(", ");
+        for result in report.scenarios.iter_mut().filter(|result| result.passed) {
+            result.passed = false;
+            result.detail = format!("not counted: the run is missing {all}");
+        }
+    }
+    report.missing = missing;
     report
+}
+
+/// The workspace and substituted `host` of the first scenario whose factory was called.
+type Reached = Option<(PathBuf, Map<String, Value>)>;
+
+/// The toolset factory [`run_with`] takes, as the runner passes it on.
+type Factory<'m> = dyn Fn(&ScenarioContext<'_>) -> Result<Box<dyn Toolset>, Missing> + 'm;
+
+/// Why a scenario did not pass.
+enum Failure {
+    /// The first expectation that did not hold.
+    Detail(String),
+    /// What the factory could not find.
+    Missing(Missing),
+}
+
+impl From<String> for Failure {
+    fn from(detail: String) -> Self {
+        Self::Detail(detail)
+    }
 }
 
 fn run_scenario(
@@ -595,21 +894,97 @@ fn run_scenario(
     contract: &Contract,
     scenario: &Scenario,
     scratch: &Path,
-    make: &dyn Fn(&Path) -> Box<dyn Toolset>,
-) -> Result<(), String> {
-    let op = contract
-        .operation(&scenario.call.operation)
-        .ok_or_else(|| {
-            format!(
-                "{} is not an operation of the contract",
-                scenario.call.operation
-            )
-        })?;
+    make: &Factory<'_>,
+    keep: Option<&mut Reached>,
+) -> Result<(), Failure> {
     let workspace = scratch.join(&scenario.name);
     lay_out(suite, &scenario.fixture, &workspace)?;
     let before = snapshot(&workspace)?;
-    let toolset = make(&workspace);
-    let outcome = toolset.invoke(&scenario.call.operation, &scenario.call.input);
+    let shared = serve::Shared::new(&scenario.fixture.serve, suite.base.as_deref(), &workspace)?;
+    std::thread::scope(|scope| -> Result<(), Failure> {
+        let running = if scenario.fixture.serve.is_empty() {
+            None
+        } else {
+            Some(serve::Server::start(scope, &shared)?)
+        };
+        let served = running.as_ref().map(serve::Server::base);
+        let result = run_calls(contract, scenario, &workspace, served, &before, make, keep);
+        drop(running);
+        result?;
+        match shared.problem() {
+            Some(problem) => Err(Failure::Detail(problem)),
+            None => Ok(()),
+        }
+    })
+}
+
+/// The values `{{serve}}` and `{{workspace}}` stand for in one scenario.
+struct Vars<'a> {
+    serve: Option<&'a str>,
+    workspace: String,
+}
+
+fn run_calls(
+    contract: &Contract,
+    scenario: &Scenario,
+    workspace: &Path,
+    served: Option<&str>,
+    before: &BTreeMap<String, Content>,
+    make: &Factory<'_>,
+    keep: Option<&mut Reached>,
+) -> Result<(), Failure> {
+    let vars = Vars {
+        serve: served,
+        workspace: workspace.to_string_lossy().into_owned(),
+    };
+    let host = match substitute(&Value::Object(scenario.host.clone()), &vars, &[]) {
+        Ok(Value::Object(host)) => host,
+        Ok(_) => Map::new(),
+        Err(problem) => return Err(Failure::Detail(format!("host: {problem}"))),
+    };
+    if let Some(keep) = keep {
+        *keep = Some((workspace.to_path_buf(), host.clone()));
+    }
+    let context = ScenarioContext {
+        workspace,
+        host: &host,
+        served,
+    };
+    let toolset = make(&context).map_err(Failure::Missing)?;
+    let mut answers: Vec<Value> = Vec::new();
+    for step in scenario.steps() {
+        let answer = run_step(
+            contract,
+            &step,
+            toolset.as_ref(),
+            workspace,
+            before,
+            &vars,
+            &answers,
+        )
+        .map_err(|detail| format!("{}{detail}", step.at))?;
+        answers.push(answer);
+    }
+    Ok(())
+}
+
+/// Makes one call and checks it; answers the output (or the error's fields) a later
+/// `{{calls.<n>.output.<path>}}` reads.
+fn run_step(
+    contract: &Contract,
+    step: &View<'_>,
+    toolset: &dyn Toolset,
+    workspace: &Path,
+    before: &BTreeMap<String, Content>,
+    vars: &Vars<'_>,
+    answers: &[Value],
+) -> Result<Value, String> {
+    let op = contract
+        .operation(step.operation)
+        .ok_or_else(|| format!("{} is not an operation of the contract", step.operation))?;
+    let input =
+        substitute(step.input, vars, answers).map_err(|problem| format!("input: {problem}"))?;
+    let outcome = toolset.invoke(step.operation, &input);
     if let Outcome::Error {
         name,
         message,
@@ -624,7 +999,7 @@ fn run_scenario(
         }
         check_error_fields(contract, name, fields)?;
     }
-    let actual = match (&scenario.expect.error, &outcome) {
+    let actual = match (&step.expect.error, &outcome) {
         (None, Outcome::Ok(output)) => output,
         (
             Some(expected),
@@ -648,13 +1023,93 @@ fn run_scenario(
             return Err(format!("expected error {expected}, got ok: {output}"));
         }
     };
-    if let Some(expected) = &scenario.expect.output {
-        match_value(expected, actual, &workspace, "output")?;
+    if let Some(expected) = &step.expect.output {
+        match_value(expected, actual, workspace, "output")?;
     }
-    for (rel, expect) in &scenario.expect.files {
-        check_file(&workspace, rel, expect, &before)?;
+    for (rel, expect) in &step.expect.files {
+        check_file(workspace, rel, expect, before)?;
     }
-    Ok(())
+    Ok(actual.clone())
+}
+
+/// Substitutes `{{serve}}`, `{{workspace}}` and `{{calls.<n>.output.<path>}}` in every string of
+/// `value`. A string that is one `{{calls...}}` reference whole takes the referenced value as it
+/// is; inside a longer string a non-string value is written as JSON. Any other `{{...}}` is left
+/// as written.
+fn substitute(value: &Value, vars: &Vars<'_>, answers: &[Value]) -> Result<Value, String> {
+    match value {
+        Value::String(text) => substitute_text(text, vars, answers),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| substitute(item, vars, answers))
+            .collect::<Result<_, _>>()
+            .map(Value::Array),
+        Value::Object(fields) => fields
+            .iter()
+            .map(|(key, item)| Ok((key.clone(), substitute(item, vars, answers)?)))
+            .collect::<Result<_, String>>()
+            .map(Value::Object),
+        other => Ok(other.clone()),
+    }
+}
+
+fn substitute_text(text: &str, vars: &Vars<'_>, answers: &[Value]) -> Result<Value, String> {
+    if let Some(name) = text.strip_prefix("{{").and_then(|t| t.strip_suffix("}}"))
+        && name.starts_with("calls.")
+        && !name.contains("}}")
+    {
+        return reference(name, answers).cloned();
+    }
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("{{") {
+        let after = &rest[start + 2..];
+        let Some(end) = after.find("}}") else {
+            break;
+        };
+        out.push_str(&rest[..start]);
+        let name = &after[..end];
+        match name {
+            "serve" => out.push_str(
+                vars.serve
+                    .ok_or("{{serve}} needs routes in fixture.serve")?,
+            ),
+            "workspace" => out.push_str(&vars.workspace),
+            _ if name.starts_with("calls.") => match reference(name, answers)? {
+                Value::String(found) => out.push_str(found),
+                found => out.push_str(&found.to_string()),
+            },
+            _ => out.push_str(&rest[start..start + 2 + end + 2]),
+        }
+        rest = &after[end + 2..];
+    }
+    out.push_str(rest);
+    Ok(Value::String(out))
+}
+
+/// The value `calls.<n>.output.<path>` names among the answers so far; `<path>` is keys and list
+/// indices joined by `.`.
+fn reference<'v>(name: &str, answers: &'v [Value]) -> Result<&'v Value, String> {
+    let mut parts = name.split('.').skip(1);
+    let index = parts
+        .next()
+        .and_then(|n| n.parse::<usize>().ok())
+        .ok_or_else(|| format!("{{{{{name}}}}}: calls.<n> needs a call index"))?;
+    let mut found = answers.get(index).ok_or_else(|| {
+        format!("{{{{{name}}}}}: calls.{index} is not an earlier call of the scenario")
+    })?;
+    if parts.next() != Some("output") {
+        return Err(format!("{{{{{name}}}}}: expected calls.{index}.output"));
+    }
+    for key in parts {
+        found = match found {
+            Value::Object(fields) => fields.get(key),
+            Value::Array(items) => key.parse::<usize>().ok().and_then(|i| items.get(i)),
+            _ => None,
+        }
+        .ok_or_else(|| format!("{{{{{name}}}}}: the answer of calls.{index} has no {key}"))?;
+    }
+    Ok(found)
 }
 
 fn check_error_fields(contract: &Contract, error: &str, fields: &Value) -> Result<(), String> {
@@ -971,21 +1426,36 @@ fn check_file(
                 Err(format!("files: {rel}: expected sha256 {hex}, got {digest}"))
             }
         }
+        FileExpect::Lines(lines) => {
+            let now = fs::read_to_string(&path).map_err(|e| format!("files: {rel}: {e}"))?;
+            let count = now.lines().count();
+            if u64::try_from(count).is_ok_and(|count| count == *lines) {
+                Ok(())
+            } else {
+                Err(format!("files: {rel}: expected {lines} lines, got {count}"))
+            }
+        }
     }
 }
 
 fn check_schemas(
     contract: &Contract,
     workspace: &Path,
-    make: &dyn Fn(&Path) -> Box<dyn Toolset>,
-) -> Vec<String> {
+    host: &Map<String, Value>,
+    make: &Factory<'_>,
+) -> Result<Vec<String>, Missing> {
     if let Err(err) = fs::create_dir_all(workspace) {
-        return vec![format!(
+        return Ok(vec![format!(
             "schemas: cannot create {}: {err}",
             workspace.display()
-        )];
+        )]);
     }
-    let schemas = make(workspace).schemas();
+    let schemas = make(&ScenarioContext {
+        workspace,
+        host,
+        served: None,
+    })?
+    .schemas();
     let mut lines = Vec::new();
     for op in &contract.operations {
         let found: Vec<_> = schemas
@@ -1018,5 +1488,5 @@ fn check_schemas(
             ));
         }
     }
-    lines
+    Ok(lines)
 }
