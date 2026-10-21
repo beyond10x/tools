@@ -33,7 +33,7 @@ it. Each property below is taken from the best existing form the inventory found
 | `determinism` | deterministic or not, for replay and caching | P2 semantics |
 | `bounds` | timeout default and maximum, output bytes, processes, cpu, memory; required and capped | substrate; P3 timeout middleware |
 | `paging` | offset, limit, digest of the whole, `truncated` | substrate; epistemic-knowledge-runtime |
-| `requires` | binaries, environment variables, settings, secrets | declared nowhere today |
+| `requires` | binaries, environment variables, settings, secrets; ports the host binds ([§ Ports](#ports)) | declared nowhere today |
 | `subjects` | the input fields that name paths, URLs or argv, and the permission patterns they suggest | P4; P5; P1 |
 | `placement` | local, confined, container | P1 placement; substrate |
 | `capability` | the Canon capability the operation serves (ADR 0083) | platform provider driver; takt protocols |
@@ -53,20 +53,57 @@ the contract, never the source.
 | `code-editor` | write, edit with a preimage digest, patch (several edits resolved against the original), move, delete |
 | `process` | run (argv only, bounded; the default implementation confines no network or file access, so `process.run` v1alpha1 declares those effects, and a confined run is a narrower contract), shell (gated), start, output, wait, signal |
 | `search` | grep, code search |
-| `web` | fetch (SSRF guard, body cap), search, crawl |
+| `http` | get, request; the address guard, redirect cap, body cap and secret redaction live in its `egress` port ([§ Ports](#ports)) |
+| `web` | fetch (to markdown, through `egress`), search (through `websearch`), ask (fetch, then `summarize` against a prompt), crawl |
 | `git` | status, diff, log, stage, commit, branch, worktree |
 | `forge` | pull request open and read, CI read, merge |
 | `build-test` | toolchain runs (cargo, go, npm, pytest, task) |
-| `browser` | open, snapshot, act, close |
+| `browser` | open, goto, snapshot (accessibility tree with element refs), act (on a ref), screenshot, close; every request Chromium makes goes through `egress` |
 | `code-intel` | definitions, references, outline, diagnostics |
 | `delegation` | spawn, await, message |
 | `memory` | remember, recall, forget |
 | `interaction` | ask the user, notify |
-| `tool-meta` | search, describe, invoke, activate |
+| `tool-meta` | search, describe, invoke, activate, over every contract the host offers, including connector operations projected into contracts ([§ Connector projections](#connector-projections)) |
 | `control` | turn done, plan and todo |
 
 `fs` and `code-editor` come first: every harness has them, and they exercise most profile
 properties (subjects, preconditions, paging, idempotency).
+
+## Ports
+
+Added 2026-10-21, from the operator's request for a fetch whose summarizer is "a contract the
+harness fulfils and injects". A **port** is a dependency an operation needs from its host: a guarded
+HTTP client, a search provider, a summarizing model, the connectors host, the host's catalogue of
+offered tools.
+
+- A port is a `tool-contract/1` document with `kind: port`, at `contracts/<port>/<version>/` like a
+  toolset. Its operations carry the full profile, so a governor reads a summarizer's `effects` the
+  way it reads a tool's. A port operation is never offered to a model.
+- An operation names the port operations it calls in `requires.ports`
+  (`<port operation>/<version>`, such as `egress.fetch/v1alpha1`). The validator reads the
+  contracts as a set: a named port operation must exist, and the operation's effects and
+  consequences include every effect and consequence of the port operations it names, with its
+  risk at least theirs. `web.ask` names `summarize.text`, so it declares `external`. `egress`
+  splits by what a call can do: `egress.fetch` (GET, no secret), `egress.send` (any method, body,
+  secrets by reference) and `egress.connect` (the tunnel the browser's proxy uses).
+- Port traits are synchronous Rust traits in `crates/tool-ports`, like `Runner` in
+  `crates/tool-toolchain`; a host with an async client bridges it. Each port's fixture
+  implementations (used by suites) live there behind a feature, not in the generic runner.
+- Offering: an operation whose ports are not all bound is not offered. `Toolset::offered` answers
+  the offered set; it defaults to every operation.
+
+Port names in the first set: `egress`, `websearch`, `summarize`, `connectors`, `catalogue`.
+
+## Connector projections
+
+A connectors `Descriptor` names operations, their JSON Schemas and a provider profile string
+(`"profile":"tavily/2026-10"` in `connectors/adapters/tavily/generated/descriptor.json`); it carries
+no effects or risk. A **projection** (`tool-projection/1`, defined in the profile document) is a
+host-authored document that selects connector operations, renames them, hides input fields the
+host fills, and gives each selected operation its full `tool-contract/1` profile. `crates/tool-connector`
+turns a descriptor and a projection into an in-memory contract (`toolset: connector-<instance>`)
+whose operations invoke through the `connectors` port. A projected contract never lands under
+`contracts/`. "Call any configured connector" is `tool-meta` over the projected contracts.
 
 ## Conformance
 
