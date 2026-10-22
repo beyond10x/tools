@@ -5,6 +5,8 @@ use std::io::{self, BufRead};
 
 use sha2::{Digest, Sha256};
 
+use crate::deadline::Deadline;
+
 /// One line of a file: what is kept of it, how long it really was, and whether the two agree.
 pub(crate) struct Line {
     /// The line's bytes, up to what the reader was told to keep, with a `\r` before the newline
@@ -40,9 +42,13 @@ pub(crate) struct Line {
 ///
 /// **The scan is bounded in bytes, not in lines**: at most `budget` bytes are consumed. When the
 /// budget runs out before a newline, the line is returned as far as it was read, `terminated`
-/// false, and the caller's byte count (which the budget was computed from) is what says the
-/// bound was passed. Without this a file over the counting bound that holds no newline would be
+/// false, `whole` false unless the file ends there or its newline is the next byte, and the
+/// caller's byte count (which the budget was computed from) is what says the bound was passed. Without this a file over the counting bound that holds no newline would be
 /// one line, consumed whole, and counted as if the bound did not exist.
+///
+/// **The deadline is checked between buffers**, not before the first: the caller checks it
+/// before every line. When it passes in the middle of a line, the line is returned as far as it
+/// was read, `terminated` false and `whole` false, so a window that shows it lists it as cut.
 ///
 /// `None` at the end of the file, or when `budget` is 0 before anything was read. A last line
 /// with no trailing newline is a line.
@@ -51,6 +57,7 @@ pub(crate) fn next_line(
     keep: usize,
     digest: &mut Sha256,
     budget: u64,
+    deadline: &Deadline,
 ) -> io::Result<Option<Line>> {
     let mut line = Line {
         kept: Vec::new(),
@@ -62,7 +69,22 @@ pub(crate) fn next_line(
     let mut any = false;
     loop {
         if budget == 0 {
+            if any {
+                // Held only in part unless the file ends here or its line ending comes next:
+                // the bound cut it, so a window that shows it lists it as cut, as the deadline's
+                // cut is listed. A `\r` the bound took just before the `\n` is the line ending's,
+                // not the line's, and is dropped as it is below.
+                let next = after_the_bound(reader)?;
+                line.whole &= next != Next::Other;
+                if next == Next::Lf && line.whole && line.kept.last() == Some(&b'\r') {
+                    line.kept.pop();
+                }
+            }
             return Ok(any.then_some(line));
+        }
+        if any && deadline.passed() {
+            line.whole = false;
+            return Ok(Some(line));
         }
         let (ends_at, consumed) = {
             let available = reader.fill_buf()?;
@@ -93,6 +115,42 @@ pub(crate) fn next_line(
             return Ok(Some(line));
         }
     }
+}
+
+/// What follows the last byte the counting bound let [`next_line`] take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Next {
+    /// The end of the file.
+    End,
+    /// A `\n`.
+    Lf,
+    /// A `\r\n`.
+    CrLf,
+    /// Anything else, a lone `\r` at the end of the file included: the line goes on.
+    Other,
+}
+
+/// Looks past the counting bound at what follows the line it stopped in.
+///
+/// A `\r` alone at the end of the buffer is consumed to see the byte after it. That byte is
+/// past the bound, so it is not fed to the digest; the scan has stopped by then, the reply
+/// carries no digest, and the reader is not read again.
+fn after_the_bound(reader: &mut impl BufRead) -> io::Result<Next> {
+    let next = match reader.fill_buf()? {
+        [] => Next::End,
+        [b'\n', ..] => Next::Lf,
+        [b'\r', b'\n', ..] => Next::CrLf,
+        [b'\r'] => {
+            reader.consume(1);
+            if reader.fill_buf()?.first() == Some(&b'\n') {
+                Next::CrLf
+            } else {
+                Next::Other
+            }
+        }
+        _ => Next::Other,
+    };
+    Ok(next)
 }
 
 /// How much of `bytes` is whole UTF-8, so a cut lands between characters rather than inside one.

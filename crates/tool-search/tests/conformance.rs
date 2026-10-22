@@ -1,4 +1,4 @@
-//! The `search` v1alpha1 conformance suite runs against the intact [`Search`] and passes,
+//! The `search` v1alpha2 conformance suite runs against the intact [`Search`] and passes,
 //! including the check that the schemas derived from the crate's types equal the contract's field
 //! lists; and the contract the crate carries is the one under `contracts/` and validates.
 
@@ -9,7 +9,7 @@ use tool_contract::{Contract, validate};
 use tool_search::{Search, contract};
 
 fn contract_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/search/v1alpha1")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/search/v1alpha2")
 }
 
 fn suite() -> Suite {
@@ -48,7 +48,7 @@ fn the_contract_the_crate_carries_is_the_one_under_contracts_and_validates() {
     assert_eq!(contract(), &on_disk);
     assert_eq!(validate(contract()), Ok(()));
     assert_eq!(
-        tool_contract::documents::get("search", "v1alpha1")
+        tool_contract::documents::get("search", "v1alpha2")
             .expect("the search document is compiled in")
             .contract(),
         contract()

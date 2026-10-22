@@ -2,18 +2,28 @@
 format: aep.planning-md/3
 id: story:conformance-runner-hosts-and-sequences
 kind: story
-status: draft
+status: implemented
 title: The conformance runner serves HTTP fixtures, passes host configuration and runs several calls on one toolset
 relations:
 - decomposes: epic:tool-contracts
 scope:
-- confidence: inferred
+- confidence: cited
   path: contracts/profile/tool-contract-1.md
-- confidence: inferred
+- confidence: cited
   path: crates/tool-contract/src/conformance.rs
-- confidence: inferred
-  path: crates/tool-contract/tests
-revision: 3
+- confidence: cited
+  path: crates/tool-contract/src/conformance/serve.rs
+- confidence: cited
+  path: crates/tool-contract/tests/adversary_hosts.rs
+- confidence: cited
+  path: crates/tool-contract/tests/adversary_hosts_2.rs
+- confidence: cited
+  path: crates/tool-contract/tests/hosts_and_sequences.rs
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T00:33:23Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-10-21T00:33:23Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-10-21T11:48:05Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":13,"verification":1}}}
 ---
 ## Outcome
 
@@ -51,8 +61,13 @@ A missing program or setting the suite needs fails the run, naming it, as the bu
 
 ## Scope
 
-- `crates/tool-contract/src/conformance.rs`
+- `crates/tool-contract/src/conformance.rs` (`run_with`, `ScenarioContext`, `Missing`, `host`, `calls`,
+  substitution, `{$lines: n}`)
+- `crates/tool-contract/src/conformance/serve.rs` (new: the loopback HTTP fixture server)
 - `contracts/profile/tool-contract-1.md` (§ Conformance: the keys above)
+- `crates/tool-contract/tests/`: `hosts_and_sequences.rs`, `adversary_hosts.rs`, `adversary_hosts_2.rs`
+
+Landed in `da2a135`, merged into `wave/w4` as `23e6a47`.
 
 ## Acceptance
 

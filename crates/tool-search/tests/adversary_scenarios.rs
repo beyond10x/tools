@@ -1,5 +1,5 @@
 //! The adversary's scenarios for `story:toolset-search` (wave w3), one test each, so that each can
-//! be run and read alone. The scenarios themselves are `contracts/search/v1alpha1/scenarios/
+//! be run and read alone. The scenarios themselves are `contracts/search/v1alpha2/scenarios/
 //! adversary-held.yaml` and `adversary-red.yaml`, part of the suite the conformance test runs; a
 //! filtered suite would be refused by the coverage rule, so each test runs the whole suite and
 //! reads the one result it is about.
@@ -17,7 +17,7 @@ use tool_search::{Search, contract};
 
 fn suite() -> Suite {
     let scenarios =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/search/v1alpha1/scenarios");
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/search/v1alpha2/scenarios");
     Suite::read_dir(scenarios).expect("the search suite parses")
 }
 

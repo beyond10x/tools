@@ -1,5 +1,5 @@
 //! Each mutant of [`Search`] (one property switched off) fails at least one scenario of the
-//! `search` v1alpha1 suite, so the suite is evidence for every property it claims to hold; and the
+//! `search` v1alpha2 suite, so the suite is evidence for every property it claims to hold; and the
 //! scenario that catches each one is the one written to.
 
 use std::path::Path;
@@ -10,7 +10,7 @@ use tool_search::{Mutation, Search, contract};
 
 fn suite() -> Suite {
     let scenarios =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/search/v1alpha1/scenarios");
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/search/v1alpha2/scenarios");
     Suite::read_dir(scenarios).expect("the search suite parses")
 }
 
@@ -155,5 +155,16 @@ fn no_context_cap_is_caught_by_the_ask_above_five() {
     killing(
         Mutation::NoContextCap,
         &["a-context-above-five-is-capped-and-the-reply-says-so"],
+    );
+}
+
+#[test]
+fn ignore_deadline_is_caught_by_the_deadline_of_0() {
+    killing(
+        Mutation::IgnoreDeadline,
+        &[
+            "a-search-with-a-deadline-of-0-reads-no-file-and-is-truncated",
+            "a-search-of-one-file-with-a-deadline-of-0-reads-nothing",
+        ],
     );
 }

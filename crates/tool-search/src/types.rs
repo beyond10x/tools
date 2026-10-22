@@ -1,5 +1,5 @@
 //! The typed input and output of `search.grep`, with the field names of
-//! `contracts/search/v1alpha1/contract.yaml`. The schemas the toolset exposes are derived from
+//! `contracts/search/v1alpha2/contract.yaml`. The schemas the toolset exposes are derived from
 //! these with `schemars`, and the conformance run checks them against the contract's field lists.
 
 use schemars::JsonSchema;
@@ -28,6 +28,10 @@ pub struct GrepInput {
     /// The most matches to answer. Default 200; a larger ask is capped at 200.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_results: Option<u64>,
+    /// The wall-clock bound of the call in milliseconds. Default 10000; above 60000 is refused
+    /// as `search.InvalidInput`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
 
 impl GrepInput {
@@ -41,6 +45,7 @@ impl GrepInput {
             glob: None,
             context: None,
             max_results: None,
+            timeout_ms: None,
         }
     }
 }
@@ -84,7 +89,8 @@ pub struct GrepOutput {
     pub pattern: String,
     /// The matching lines, in walk order and then line order.
     pub matches: Vec<Match>,
-    /// A match past the answered count exists, or a file was too large to search.
+    /// A match past the answered count exists, a file was too large to search, or the deadline
+    /// was reached before the search was done.
     pub truncated: bool,
     /// The walk stopped descending at its depth bound somewhere, so files below it were not
     /// searched.
@@ -102,7 +108,10 @@ pub struct GrepOutput {
     /// The context the matches carry, when the ask was over the cap of 5; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<u64>,
-    /// Why `context` differs from the ask, when it does; absent otherwise.
+    /// Why `context` differs from the ask, when it does, and that the deadline was reached, when
+    /// it was; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The call stopped at its deadline; `matches` holds the ones found by then.
+    pub deadline_reached: bool,
 }

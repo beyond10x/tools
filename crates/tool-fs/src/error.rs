@@ -6,6 +6,7 @@ use std::io;
 use serde_json::{Value, json};
 
 use crate::MAX_LINE_COUNT_BYTES;
+use crate::deadline::MAX_TIMEOUT_MS;
 
 /// Why an operation refused, or why a workspace did not open.
 #[derive(Debug, thiserror::Error)]
@@ -110,6 +111,16 @@ pub enum FsError {
         #[source]
         source: globset::Error,
     },
+    /// `timeout_ms` is above the most a call may name.
+    #[error(
+        "`timeout_ms` is {timeout_ms} and the most a call may name is {max} milliseconds. \
+         Nothing was read.",
+        max = MAX_TIMEOUT_MS
+    )]
+    TimeoutAboveMax {
+        /// The bound asked for.
+        timeout_ms: u64,
+    },
     /// The filesystem refused for a reason other than the path's absence.
     #[error("`{path}`: {source}")]
     Io {
@@ -135,10 +146,12 @@ impl FsError {
             | Self::PastEnd { .. }
             | Self::PastScan { .. } => "fs.InvalidWindow",
             Self::EmptyGlob | Self::InvalidGlob { .. } => "fs.InvalidGlob",
+            Self::TimeoutAboveMax { .. } => "fs.InvalidInput",
         }
     }
 
-    /// The contract error's fields, as JSON: `path` or `glob`, as the contract declares them.
+    /// The contract error's fields, as JSON: `path` or `glob`, as the contract declares them, and
+    /// none for `fs.InvalidInput`.
     pub fn fields(&self) -> Value {
         match self {
             Self::Workspace { path, .. }
@@ -154,6 +167,8 @@ impl FsError {
             | Self::Io { path, .. } => json!({ "path": path }),
             Self::EmptyGlob => json!({ "glob": "" }),
             Self::InvalidGlob { glob, .. } => json!({ "glob": glob }),
+            // `fs.InvalidInput` declares no fields.
+            Self::TimeoutAboveMax { .. } => json!({}),
         }
     }
 

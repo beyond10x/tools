@@ -1,7 +1,7 @@
 # Tool contracts
 
 Status: draft, 2026-10-19. Decided by the owner on 2026-10-19: tool contracts and their default
-implementations live in this repository (`contracts/`, `crates/tool-<toolset>`); atlas ADR 0095
+implementations live in this repository (`contracts/`, `crates/tool-<toolset>`); ADR 0095
 records it.
 
 ## Problem
@@ -134,14 +134,14 @@ drift visible.
 
 | phase | work |
 |---|---|
-| T0 | this repository, its store, atlas ADR 0095 and catalog entry |
+| T0 | this repository, its store, ADR 0095 and catalog entry |
 | T1 | the `tool-contract/1` profile and its validator; `fs` and `code-editor` contracts with suites; `crates/tool-fs`, `crates/tool-code-editor` passing them; `crates/tool-toolchain` from harness-toolchain |
 | T2 | harness, metaharness and takt adopt T1 |
 | T3 | the remaining toolsets in the order above; the other adopters |
 
 ## T1 in detail (2026-10-20)
 
-Decided by the owner on 2026-10-20 (atlas ADR 0097): harness is kept, and `harness-tools`
+Decided by the owner on 2026-10-20 (ADR 0097): harness is kept, and `harness-tools`
 (6,049 lines) and `harness-toolchain` (1,952 lines) move into this repository as crates under the
 `tool-contract/1` profile; harness and metaharness then consume them. T1 therefore starts from
 harness's code, not from empty crates. Every crate records the harness file it came from in its

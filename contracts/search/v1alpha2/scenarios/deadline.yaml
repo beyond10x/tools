@@ -1,0 +1,73 @@
+format: tool-conformance/1
+toolset: search
+version: v1alpha2
+scenarios:
+  - name: a-search-with-a-deadline-of-0-reads-no-file-and-is-truncated
+    holds: [bounds, paging]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, timeout_ms: 0}}
+    expect:
+      outcome: ok
+      output:
+        pattern: needle
+        matches: []
+        truncated: true
+        depth_bound_reached: false
+        skipped_large_files: 0
+        skipped_large_paths: []
+        note: {$contains: deadline}
+        deadline_reached: true
+      files: {a.txt: unchanged, sub/b.txt: unchanged}
+  - name: a-search-of-one-file-with-a-deadline-of-0-reads-nothing
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, path: a.txt, timeout_ms: 0}}
+    expect:
+      outcome: ok
+      output:
+        matches: []
+        truncated: true
+        deadline_reached: true
+  - name: a-search-inside-its-deadline-answers-deadline-reached-false
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, timeout_ms: 60000}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: a.txt, line: 1, text: needle, line_truncated: false}
+          - {path: sub/b.txt, line: 1, text: needle, line_truncated: false}
+        truncated: false
+        note: {$absent: true}
+        deadline_reached: false
+  - name: a-search-that-names-no-deadline-is-given-the-default
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: a.txt, line: 1, text: needle, line_truncated: false}
+        truncated: false
+        deadline_reached: false
+  - name: a-search-with-a-deadline-above-the-maximum-is-refused
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, timeout_ms: 60001}}
+    expect:
+      error: search.InvalidInput
+  - name: a-broken-expression-is-refused-whatever-its-deadline
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: "fn (alpha", regex: true, timeout_ms: 0}}
+    expect:
+      error: search.InvalidPattern
+      output: {pattern: "fn (alpha"}

@@ -1,0 +1,86 @@
+format: tool-conformance/1
+toolset: fs
+version: v1alpha2
+scenarios:
+  - name: a-path-that-climbs-out-is-refused-with-nothing-read
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: fs.read, input: {path: ../x}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: ../x}
+      files: {a.txt: unchanged}
+  - name: a-path-that-starts-at-the-filesystem-root-is-refused
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: fs.stat, input: {path: "/"}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: "/"}
+  - name: a-link-to-a-directory-outside-the-workspace-is-not-listed
+    holds: [subjects]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: fs.list, input: {path: up}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: up}
+      files: {up: unchanged, own.txt: unchanged}
+  - name: a-link-out-of-the-workspace-is-not-read-through
+    holds: [subjects]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: fs.read, input: {path: up}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: up}
+  - name: a-glob-does-not-walk-through-a-link-out-of-the-workspace
+    holds: [subjects]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: fs.glob, input: {glob: "*"}}
+    expect:
+      outcome: ok
+      output:
+        paths: [inner, own.txt, sub/keep.txt]
+        truncated: false
+        depth_bound_reached: false
+  - name: a-glob-started-in-a-link-out-of-the-workspace-is-refused
+    holds: [subjects]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: fs.glob, input: {glob: "*", path: up}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: up}
+  - name: stat-of-a-link-out-of-the-workspace-is-refused
+    holds: [subjects]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: fs.stat, input: {path: up}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: up}
+  - name: a-link-that-lands-inside-the-workspace-is-read-under-its-targets-name
+    holds: [subjects]
+    fixture:
+      dir: fixtures/linked
+    call: {operation: fs.read, input: {path: inner}}
+    expect:
+      outcome: ok
+      output:
+        path: own.txt
+        text: "     1\town\n"
+        sha256: {$sha256_of: own.txt}
+      files: {inner: unchanged, own.txt: unchanged}
+  - name: a-bad-window-on-a-path-outside-the-workspace-is-refused-for-the-path
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: fs.read, input: {path: ../x, limit: 0}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: ../x}
+      files: {a.txt: unchanged}

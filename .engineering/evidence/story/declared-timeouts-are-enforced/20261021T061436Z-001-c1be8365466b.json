@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T06:14:36Z",
+  "actor": "human:timo",
+  "artifact": "story:declared-timeouts-are-enforced",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo-serial.sh test -p b10x-tool-fs -p b10x-tool-search --locked --no-fail-fast",
+    "reference": "declared-timeouts/scratch/red-test.log (unknown field timeout_ms, deadline_reached absent) vs declared-timeouts/scratch/coordinator-treatment.log (exit 0; ignore-deadline fails 5 of 116 fs and 2 of 74 search scenarios)"
+  }
+}

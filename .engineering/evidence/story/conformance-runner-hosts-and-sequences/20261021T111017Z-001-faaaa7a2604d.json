@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-21T11:10:17Z",
+  "actor": "human:timo",
+  "artifact": "story:conformance-runner-hosts-and-sequences",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-conformance-runner-pass-1",
+    "reference": "M2 conformance.rs:848: killed by a_program_missing_for_one_scenario_leaves_no_other_scenario_counted, kept",
+    "review": "review-result:adversary-conformance-runner-pass-1",
+    "outcome": "no-op"
+  }
+}

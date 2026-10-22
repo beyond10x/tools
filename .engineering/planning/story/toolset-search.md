@@ -34,7 +34,7 @@ harness 0.13.3: `grep`, `search_expression`, `around`, `cut_to`, and the `walk` 
 ## Context
 
 Drafted during T1 (2026-10-20) so that the part of harness's `local.rs` that T1 did not move has a
-named home; atlas ADR 0097 moves all of harness's tools here. Phase T3 in
+named home; ADR 0097 moves all of harness's tools here. Phase T3 in
 `docs/design/tool-contracts.md`.
 
 ## Scope

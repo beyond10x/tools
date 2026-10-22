@@ -66,7 +66,7 @@ ESS store's `story:an-outcome-that-only-stores-is-observed-through-a-view`).
   workings in ESS with the `ess:specifying` skill; this story was widened from "lift each contract
   document into an ESS domain" to the profile, every toolset and the suites.
 - Today `contracts/<toolset>/v1alpha1/contract.yaml` is `tool-contract/1` YAML with ESS-shaped
-  commands, checked by `crates/tool-contract` (`validate.rs`, `conformance.rs`); atlas ADR 0095
+  commands, checked by `crates/tool-contract` (`validate.rs`, `conformance.rs`); ADR 0095
   point 2 says a contract is an ESS command plus the profile.
 - A released `v1alpha1` is never edited in place (`AGENTS.md` § Rules): modelling `fs.read` as a
   view changes what an adopter calls, so the ESS form of a released toolset is a new version beside

@@ -1,5 +1,5 @@
 //! Each mutant of [`Fs`] (one property switched off) fails at least one scenario of the `fs`
-//! v1alpha1 suite, so the suite is evidence for every property it claims to hold; and the scenario
+//! v1alpha2 suite, so the suite is evidence for every property it claims to hold; and the scenario
 //! that catches each one is the one written to.
 
 use std::path::Path;
@@ -10,7 +10,7 @@ use tool_fs::{Fs, Mutation, contract};
 
 fn suite() -> Suite {
     let scenarios =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/fs/v1alpha1/scenarios");
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/fs/v1alpha2/scenarios");
     Suite::read_dir(scenarios).expect("the fs suite parses")
 }
 
@@ -110,4 +110,23 @@ fn no_ceiling_cap_is_caught_by_the_ask_above_the_maximum() {
         Mutation::NoCeilingCap,
         "a-byte-ceiling-above-the-maximum-is-capped-at-the-maximum",
     );
+}
+
+#[test]
+fn ignore_deadline_is_caught_by_the_deadline_of_0_on_every_operation() {
+    let report = run_with(&suite(), Some(Mutation::IgnoreDeadline));
+    println!("{}:\n{report}", Mutation::IgnoreDeadline.name());
+    for scenario in [
+        "a-read-with-a-deadline-of-0-stops-before-the-first-line",
+        "a-listing-with-a-deadline-of-0-answers-no-entry-and-is-truncated",
+        "a-glob-with-a-deadline-of-0-answers-no-path-and-is-truncated",
+        "a-stat-with-a-deadline-of-0-answers-the-size-without-the-digest",
+    ] {
+        assert!(
+            failed(&report).contains(&scenario),
+            "{}: expected {scenario} to fail, failed: {:?}",
+            Mutation::IgnoreDeadline.name(),
+            failed(&report)
+        );
+    }
 }

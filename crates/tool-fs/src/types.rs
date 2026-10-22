@@ -1,5 +1,5 @@
 //! The typed inputs and outputs of the four operations, with the field names of
-//! `contracts/fs/v1alpha1/contract.yaml`. The schemas the toolset exposes are derived from these
+//! `contracts/fs/v1alpha2/contract.yaml`. The schemas the toolset exposes are derived from these
 //! with `schemars`, and the conformance run checks them against the contract's field lists.
 
 use std::fs::FileType;
@@ -23,6 +23,10 @@ pub struct ReadInput {
     /// The byte ceiling of the window. Default 65536; a larger ask is capped at 262144.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_bytes: Option<u64>,
+    /// The wall-clock bound of the call in milliseconds. Default 10000; above 60000 is
+    /// refused as `fs.InvalidInput`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
 
 impl ReadInput {
@@ -33,6 +37,7 @@ impl ReadInput {
             offset: None,
             limit: None,
             max_bytes: None,
+            timeout_ms: None,
         }
     }
 
@@ -83,6 +88,8 @@ pub struct ReadOutput {
     /// Why `lines.total` is `None`, when it is; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The call stopped at its deadline; the text holds the lines answered by then.
+    pub deadline_reached: bool,
 }
 
 /// The input of `fs.list`.
@@ -92,6 +99,10 @@ pub struct ListInput {
     /// The directory, relative to the workspace root. Default `.`, the root itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// The wall-clock bound of the call in milliseconds. Default 10000; above 60000 is
+    /// refused as `fs.InvalidInput`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
 
 /// What an entry is by its own type: a regular file, a directory, a symbolic link (not followed,
@@ -141,8 +152,11 @@ pub struct ListOutput {
     pub path: String,
     /// The entries in name order, at most 500.
     pub entries: Vec<Entry>,
-    /// The directory holds more entries than were answered.
+    /// The directory holds more entries than were answered, or the deadline was reached before
+    /// the listing was whole.
     pub truncated: bool,
+    /// The call stopped at its deadline; the entries are the ones read by then.
+    pub deadline_reached: bool,
 }
 
 /// The input of `fs.glob`.
@@ -158,6 +172,10 @@ pub struct GlobInput {
     /// The most paths to answer. Default 500; a larger ask is capped at 500.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_results: Option<u64>,
+    /// The wall-clock bound of the call in milliseconds. Default 10000; above 60000 is
+    /// refused as `fs.InvalidInput`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
 
 impl GlobInput {
@@ -167,6 +185,7 @@ impl GlobInput {
             glob: glob.into(),
             path: None,
             max_results: None,
+            timeout_ms: None,
         }
     }
 }
@@ -176,11 +195,14 @@ impl GlobInput {
 pub struct GlobOutput {
     /// The matching files' workspace-relative paths, in walk order.
     pub paths: Vec<String>,
-    /// More paths matched than were answered.
+    /// More paths matched than were answered, or the deadline was reached before the walk was
+    /// done.
     pub truncated: bool,
     /// The walk stopped descending at its depth bound somewhere, so matches below it are not in
     /// `paths`.
     pub depth_bound_reached: bool,
+    /// The call stopped at its deadline; `paths` holds the matches found by then.
+    pub deadline_reached: bool,
 }
 
 /// The input of `fs.stat`.
@@ -189,6 +211,20 @@ pub struct GlobOutput {
 pub struct StatInput {
     /// The entry, relative to the workspace root.
     pub path: String,
+    /// The wall-clock bound of the call in milliseconds. Default 10000; above 60000 is
+    /// refused as `fs.InvalidInput`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+}
+
+impl StatInput {
+    /// The entry at `path`, under the default deadline.
+    pub fn new(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            timeout_ms: None,
+        }
+    }
 }
 
 /// The output of `fs.stat`.
@@ -202,6 +238,8 @@ pub struct StatOutput {
     /// The size of a file; `None` for anything else.
     pub bytes: Option<u64>,
     /// The SHA-256 of a file of at most the counting bound (16 MiB) as lowercase hex; `None` for
-    /// a larger file and for anything that is not a file.
+    /// a larger file, for anything that is not a file, and when the deadline was reached.
     pub sha256: Option<String>,
+    /// The call stopped at its deadline; `sha256` is `None`.
+    pub deadline_reached: bool,
 }

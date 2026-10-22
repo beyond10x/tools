@@ -1,0 +1,262 @@
+format: tool-conformance/1
+toolset: search
+version: v1alpha2
+scenarios:
+  - name: a-literal-pattern-is-found-anywhere-and-machine-output-is-not-searched
+    holds: [effects, subjects, output]
+    fixture:
+      files:
+        src/one.rs: "fn alpha() {}\nlet needle = 1;\n"
+        top.txt: "needle\n"
+        target/debug/built.txt: "needle\n"
+        node_modules/m/index.js: "needle\n"
+        .git/HEAD: "needle\n"
+        .venv/lib.txt: "needle\n"
+        __pycache__/cached.txt: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        pattern: needle
+        matches:
+          - {path: src/one.rs, line: 2, text: "let needle = 1;", line_truncated: false, before: {$absent: true}, after: {$absent: true}}
+          - {path: top.txt, line: 1, text: needle, line_truncated: false, before: {$absent: true}, after: {$absent: true}}
+        truncated: false
+        depth_bound_reached: false
+        skipped_large_files: 0
+        skipped_large_paths: []
+        regex: {$absent: true}
+        glob: {$absent: true}
+        context: {$absent: true}
+        note: {$absent: true}
+      files: {src/one.rs: unchanged, top.txt: unchanged, target/debug/built.txt: unchanged, .git/HEAD: unchanged}
+  - name: the-same-search-a-second-time-answers-the-same
+    holds: [idempotency, determinism, effects]
+    fixture:
+      files:
+        src/one.rs: "fn alpha() {}\nlet needle = 1;\n"
+        top.txt: "needle\n"
+        target/debug/built.txt: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        pattern: needle
+        matches:
+          - {path: src/one.rs, line: 2, text: "let needle = 1;", line_truncated: false}
+          - {path: top.txt, line: 1, text: needle, line_truncated: false}
+        truncated: false
+        depth_bound_reached: false
+      files: {src/one.rs: unchanged, top.txt: unchanged}
+  - name: a-search-that-finds-nothing-answers-an-empty-list
+    holds: [output]
+    fixture:
+      files: {a.txt: "alpha\nbeta\n"}
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches: []
+        truncated: false
+        skipped_large_files: 0
+        skipped_large_paths: []
+  - name: a-literal-pattern-is-text-and-not-a-regular-expression
+    holds: [output]
+    fixture:
+      files: {a.txt: "a.b\naxb\nfn (alpha\n"}
+    call: {operation: search.grep, input: {pattern: a.b}}
+    expect:
+      outcome: ok
+      output:
+        pattern: a.b
+        matches:
+          - {path: a.txt, line: 1, text: a.b, line_truncated: false}
+        regex: {$absent: true}
+  - name: a-pattern-that-would-be-a-broken-expression-is-searched-for-as-text
+    holds: [output]
+    fixture:
+      files: {a.txt: "a.b\naxb\nfn (alpha\n"}
+    call: {operation: search.grep, input: {pattern: "fn (alpha"}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: a.txt, line: 3, text: "fn (alpha", line_truncated: false}
+  - name: regex-false-is-a-literal-search-and-is-not-echoed
+    holds: [output]
+    fixture:
+      files: {a.txt: "a.b\naxb\n"}
+    call: {operation: search.grep, input: {pattern: a.b, regex: false}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: a.txt, line: 1, text: a.b}
+        regex: {$absent: true}
+  - name: a-regular-expression-is-matched-when-regex-is-set-and-is-echoed
+    holds: [output]
+    fixture:
+      files: {a.rs: "fn alpha() {}\nfn beta() {}\n"}
+    call: {operation: search.grep, input: {pattern: 'fn\s+(alpha|gamma)', regex: true}}
+    expect:
+      outcome: ok
+      output:
+        pattern: 'fn\s+(alpha|gamma)'
+        matches:
+          - {path: a.rs, line: 1, text: "fn alpha() {}", line_truncated: false}
+        regex: true
+        truncated: false
+  - name: a-regular-expression-that-does-not-compile-is-refused
+    holds: [output]
+    fixture:
+      files: {a.rs: "fn alpha() {}\n"}
+    call: {operation: search.grep, input: {pattern: "fn (alpha", regex: true}}
+    expect:
+      error: search.InvalidPattern
+      output: {pattern: "fn (alpha"}
+      files: {a.rs: unchanged}
+  - name: a-regular-expression-over-the-size-limit-is-refused
+    holds: [output, bounds]
+    fixture:
+      files: {a.txt: "aaa\n"}
+    call: {operation: search.grep, input: {pattern: "(a{1000}){1000}", regex: true}}
+    expect:
+      error: search.InvalidPattern
+      output: {pattern: "(a{1000}){1000}"}
+  - name: an-empty-pattern-is-refused
+    holds: [output]
+    fixture:
+      files: {a.txt: "aaa\n"}
+    call: {operation: search.grep, input: {pattern: ""}}
+    expect:
+      error: search.InvalidPattern
+      output: {pattern: ""}
+  - name: a-glob-without-a-separator-narrows-the-search-to-the-files-it-names
+    holds: [output]
+    fixture:
+      files:
+        src/one.rs: "a\nb\nneedle\nd\ne\n"
+        notes.md: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle, glob: "*.rs"}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: src/one.rs, line: 3, text: needle, line_truncated: false, before: {$absent: true}, after: {$absent: true}}
+        glob: "*.rs"
+        truncated: false
+  - name: a-glob-with-a-separator-matches-the-whole-path-and-star-does-not-cross-one
+    holds: [output]
+    fixture:
+      files:
+        one.rs: "needle\n"
+        src/inner/two.rs: "needle\n"
+        src/one.rs: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle, glob: "src/*.rs"}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: src/one.rs, line: 1}
+        glob: "src/*.rs"
+  - name: a-glob-of-a-whole-tree-reaches-every-file-under-it
+    holds: [output]
+    fixture:
+      files:
+        one.rs: "needle\n"
+        src/inner/two.rs: "needle\n"
+        src/one.rs: "needle\n"
+    call: {operation: search.grep, input: {pattern: needle, glob: "src/**"}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: src/inner/two.rs, line: 1}
+          - {path: src/one.rs, line: 1}
+  - name: a-glob-applies-to-a-file-named-by-path
+    holds: [output, subjects]
+    fixture:
+      files: {src/one.rs: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, path: src/one.rs, glob: "*.md"}}
+    expect:
+      outcome: ok
+      output:
+        matches: []
+        glob: "*.md"
+  - name: an-empty-glob-is-refused
+    holds: [output]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, glob: ""}}
+    expect:
+      error: search.InvalidGlob
+      output: {glob: ""}
+  - name: a-glob-that-does-not-compile-is-refused
+    holds: [output]
+    fixture:
+      files: {a.txt: "needle\n"}
+    call: {operation: search.grep, input: {pattern: needle, glob: "src/["}}
+    expect:
+      error: search.InvalidGlob
+      output: {glob: "src/["}
+  - name: context-comes-back-numbered-on-both-sides
+    holds: [output]
+    fixture:
+      files: {src/one.rs: "a\nb\nneedle\nd\ne\n"}
+    call: {operation: search.grep, input: {pattern: needle, context: 1}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - path: src/one.rs
+            line: 3
+            text: needle
+            line_truncated: false
+            before: [{line: 2, text: b, line_truncated: false}]
+            after: [{line: 4, text: d, line_truncated: false}]
+        context: {$absent: true}
+        note: {$absent: true}
+  - name: context-stops-at-the-edges-of-the-file-and-is-not-merged
+    holds: [output]
+    fixture:
+      files: {a.txt: "needle\nb\nneedle\n"}
+    call: {operation: search.grep, input: {pattern: needle, context: 2}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - line: 1
+            before: []
+            after: [{line: 2, text: b}, {line: 3, text: needle}]
+          - line: 3
+            before: [{line: 1, text: needle}, {line: 2, text: b}]
+            after: []
+  - name: a-carriage-return-before-the-newline-is-not-part-of-the-line
+    holds: [output]
+    fixture:
+      files: {dos.txt: "alpha\r\nneedle\r\n"}
+    call: {operation: search.grep, input: {pattern: needle, context: 1}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - path: dos.txt
+            line: 2
+            text: needle
+            line_truncated: false
+            before: [{line: 1, text: alpha, line_truncated: false}]
+            after: []
+  - name: a-file-that-is-not-text-is-not-searched-and-not-reported
+    holds: [output]
+    fixture:
+      dir: fixtures/not-text
+    call: {operation: search.grep, input: {pattern: needle}}
+    expect:
+      outcome: ok
+      output:
+        matches:
+          - {path: text.txt, line: 1, text: needle}
+        truncated: false
+        skipped_large_files: 0
+        skipped_large_paths: []
+      files: {blob.bin: unchanged, text.txt: unchanged}

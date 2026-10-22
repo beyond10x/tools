@@ -1,0 +1,88 @@
+format: tool-conformance/1
+toolset: search
+version: v1alpha2
+scenarios:
+  - name: adversary2-order-grep-empty-pattern-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "", "timeout_ms": 60001}}
+    expect:
+      error: search.InvalidPattern
+  - name: adversary2-order-grep-empty-pattern-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "", "timeout_ms": 0}}
+    expect:
+      error: search.InvalidPattern
+  - name: adversary2-order-grep-broken-pattern-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "fn (alpha", "regex": true, "timeout_ms": 60001}}
+    expect:
+      error: search.InvalidPattern
+  - name: adversary2-order-grep-broken-pattern-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "fn (alpha", "regex": true, "timeout_ms": 0}}
+    expect:
+      error: search.InvalidPattern
+  - name: adversary2-order-grep-empty-glob-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "needle", "glob": "", "timeout_ms": 60001}}
+    expect:
+      error: search.InvalidGlob
+  - name: adversary2-order-grep-empty-glob-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "needle", "glob": "", "timeout_ms": 0}}
+    expect:
+      error: search.InvalidGlob
+  - name: adversary2-order-grep-broken-glob-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "needle", "glob": "sub/[", "timeout_ms": 60001}}
+    expect:
+      error: search.InvalidGlob
+  - name: adversary2-order-grep-broken-glob-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "needle", "glob": "sub/[", "timeout_ms": 0}}
+    expect:
+      error: search.InvalidGlob
+  - name: adversary2-order-grep-outside-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "needle", "path": "..", "timeout_ms": 60001}}
+    expect:
+      error: search.OutsideWorkspace
+  - name: adversary2-order-grep-outside-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "needle", "path": "..", "timeout_ms": 0}}
+    expect:
+      error: search.OutsideWorkspace
+  - name: adversary2-order-grep-missing-is-refused-for-its-input-at-timeout-60001
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "needle", "path": "missing", "timeout_ms": 60001}}
+    expect:
+      error: search.NotFound
+  - name: adversary2-order-grep-missing-is-refused-for-its-input-at-timeout-0
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "needle\n", sub/b.txt: "needle\n"}
+    call: {operation: search.grep, input: {"pattern": "needle", "path": "missing", "timeout_ms": 0}}
+    expect:
+      error: search.NotFound

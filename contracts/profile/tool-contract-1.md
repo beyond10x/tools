@@ -176,10 +176,49 @@ A scenario:
 | key | required | value |
 |---|---|---|
 | `name` | yes | unique in the suite; also the workspace directory name, so no `/` and no leading `.` |
-| `holds` | no | the profile properties this scenario is evidence for; each must be a profile property |
-| `fixture` | no | `dir`: a directory to copy into the workspace first, symlinks recreated as symlinks with their target as written; `files`: workspace-relative path → text, written after `dir` |
-| `call` | yes | `{operation, input}`; `input` is the operation's input as JSON, `{}` when absent; every key must be an input field of the operation (a missing key is not checked) |
-| `expect` | yes | exactly one of `outcome: ok` or `error: <name>`, where `<name>` is the `error` of one of the operation's outcomes; optional `output`; optional `files` |
+| `holds` | no | the profile properties this scenario is evidence for; each must be a profile property. Not allowed beside `calls`, whose entries carry their own |
+| `host` | no | a map handed to the toolset factory, never to an operation: allow-lists, secret values, a grant ceiling, port fixture tables. Its strings are substituted (below) |
+| `fixture` | no | `dir`: a directory to copy into the workspace first, symlinks recreated as symlinks with their target as written; `files`: workspace-relative path → text, written after `dir`; `serve`: HTTP routes served while the scenario runs (below) |
+| `call` | one of `call`, `calls` | `{operation, input}`; `input` is the operation's input as JSON, `{}` when absent; every key must be an input field of the operation (a missing key is not checked). Its strings are substituted (below) |
+| `calls` | one of `call`, `calls` | a non-empty ordered list of `{operation, input, holds, expect}`, made in order on one toolset; `operation` and `input` as in `call`, `holds` as the scenario's (on that entry's operation), `expect` as the scenario's (required) |
+| `expect` | with `call` | exactly one of `outcome: ok` or `error: <name>`, where `<name>` is the `error` of one of the operation's outcomes; optional `output`; optional `files`. Not allowed beside `calls` |
+
+A scenario with both `call` and `calls`, or neither, is refused when the suite is parsed.
+
+`fixture.serve` maps a route path to its answer. The runner serves the routes on
+`127.0.0.1:<ephemeral port>` over plain HTTP/1.1, one request per connection, from the moment the
+fixture is laid out until the scenario ends; no thread or socket outlives the scenario. A path
+must start with `/` and hold no whitespace, `?` or `#`, or the suite is refused when it is parsed.
+A request is matched on its path without the query; a path with no route is answered `404`.
+
+| route key | required | value |
+|---|---|---|
+| `status` | no | the status code, 100 to 599; `200`, or `302` when `redirect` is set |
+| `headers` | no | response header name → value |
+| `body` | no | the body text; empty when neither it nor `body_file` is given |
+| `body_file` | no | a file whose bytes are the body, relative to the contract directory; not with `body` |
+| `redirect` | no | the `Location` header value |
+| `delay_ms` | no | how long to wait before answering |
+
+Each request a route receives is appended to `.serve/<path with / as _>.jsonl` in the workspace
+(`/a` → `.serve/_a.jsonl`) as one JSON line `{"method", "path", "headers", "body"}`. Two routes of
+one scenario whose paths give the same log name (`/a/b` and `/a_b` both give `.serve/_a_b.jsonl`)
+are refused at parse, naming both routes and the log file. `path` is the
+request target as sent, query included; `headers` maps each name as sent to its value, repeated
+names joined with `, `; `body` is the body read by `Content-Length`, as text. A request carrying
+`Transfer-Encoding` (a chunked body, say) is not decoded: it is logged with `"body": null` and
+answered `501 Not Implemented`, whatever the route says. A request log that cannot be written
+fails the scenario.
+
+Substitution, in every string of `call.input`, of each `calls` entry's `input` and of `host`:
+
+| written | replaced with |
+|---|---|
+| `{{serve}}` | the served base URL, `http://127.0.0.1:<port>`, no trailing slash; a scenario without `fixture.serve` fails |
+| `{{workspace}}` | the scenario's workspace path |
+| `{{calls.<n>.output.<path>}}` | in an entry of `calls`, the answer of entry `<n>` (0-based, earlier than this one): its output, or its error's fields; `<path>` is keys and list indices joined by `.`. A string that is the reference alone takes the value with its JSON type; inside a longer string a non-string value is written as JSON. A reference to an entry not yet made, or a path the answer does not have, fails the scenario |
+
+Any other `{{...}}` is left as written.
 
 `expect.output` is matched as a subset: every key named must match, keys not named are not
 looked at. Under `error`, it is matched against the error's fields. Lists match element by
@@ -202,6 +241,10 @@ is a matcher:
 | `absent` | there is no such file (nor a link, dangling or not) |
 | `{equals: <text>}` | the file holds exactly `<text>`; a link is followed |
 | `{sha256: <hex>}` | the file's SHA-256 is `<hex>`; a link is followed |
+| `{$lines: <n>}` | the file holds `<n>` lines, a last line without a newline counted; a link is followed. A fixture port's call log (`.ports/<port>.jsonl`, one line per call) is checked with it |
+
+In a `calls` scenario each entry's `expect.files` is checked after that entry's call; `unchanged`
+compares with the tree as the fixture laid it out, before the first call.
 
 ### Coverage
 
@@ -213,36 +256,57 @@ the operation's profile. The declarative properties `risk`, `consequences`, `req
 
 The rule is applied per operation: for each operation and each behavioural property present in
 its profile, some scenario whose `call.operation` is that operation must list the property in
+`holds`, or some `calls` entry whose `operation` is that operation must list it in its own
 `holds`. The runner refuses the suite before any scenario runs, with one line
 `<operation>: <property>: no scenario holds it` per gap. It also refuses a `holds` entry that is
 not a profile property, a call to an operation the contract does not declare, a `call.input` key
 that is not an input field of the operation, an `expect.error` that is not the `error` of one of
-the operation's outcomes, and a `toolset` or `version` that is not the contract's. A scenario is
-checked against the contract before it counts as evidence about an implementation.
+the operation's outcomes, and a `toolset` or `version` that is not the contract's; each of these
+applies to every entry of `calls` too, and its line names the entry as `calls[<i>]`. A scenario
+is checked against the contract before it counts as evidence about an implementation.
 
 ### The runner
 
-`tool_contract::conformance::run(suite, contract, scratch, make)`:
+`tool_contract::conformance::run_with(suite, contract, scratch, make)`, where `make` takes a
+`ScenarioContext { workspace, host, served }` (the workspace path, the substituted `host` map,
+empty when the scenario names none, and the served base URL when it has routes) and answers a
+toolset or `Missing::Program(name)` / `Missing::Setting(name)`.
+`tool_contract::conformance::run(suite, contract, scratch, make)` with `make(workspace)` is
+`run_with` over a factory that reads only the workspace.
 
 1. applies the coverage rule; a refused suite runs nothing;
 2. for each scenario, in order: clears and creates `<scratch>/<name>/`, copies `fixture.dir`,
-   writes `fixture.files`, records every file's digest and every symlink's target, calls
-   `make(workspace)` for a toolset, invokes `call.operation` with `call.input`, checks the
-   outcome, matches `expect.output`, checks `expect.files`. A returned error whose name is not
+   writes `fixture.files`, records every file's digest and every symlink's target, starts serving
+   `fixture.serve`, calls `make` once for a toolset, invokes `call.operation` with the
+   substituted `call.input` (or each `calls` entry in order on that toolset), checks the
+   outcome, matches `expect.output`, checks `expect.files`, and stops the server. The first
+   expectation that does not hold ends the scenario; its detail names the entry as
+   `calls[<i>]`. A returned error whose name is not
    the `error` of one of the operation's outcomes fails the scenario whatever `expect` says: an
    implementation may only return the errors its contract declares for that operation. Its
    `fields` must be a JSON object whose keys are exactly the declared `fields` names of that
    error, in any order; a missing or an extra key fails the scenario naming the error and the
    key. Field values are not checked against their declared types (a returned value carries no
    schema; `expect.output` is where a scenario pins them);
-3. once per run, builds a toolset over `<scratch>/.schemas/` and checks every schema it derives
-   against the contract ([§ Schema shapes](#schema-shapes)); an operation with no derived schema,
-   or a derived schema for an undeclared operation, is a mismatch.
+3. once per run, after the scenarios, builds a toolset with the context of the first scenario
+   whose factory was called (its workspace and its `host` as substituted for its run, `served`
+   absent; a `Missing` from this build is the run's, as below) and checks every schema it
+   derives against the contract ([§ Schema shapes](#schema-shapes)); an operation with no
+   derived schema, or a derived schema for an undeclared operation, is a mismatch. When no
+   scenario reached its factory, the toolset is built with an empty `host` over
+   `<scratch>/.schemas/`, and a `Missing` from that build is not reported unless the suite has
+   no scenario (every scenario has already failed, so the run fails anyway).
 
-The `Report` holds the refusals, one result per scenario (`name`, `passed`, `detail`) and the
-schema mismatches; `passed()` is true only when all three are clean. Its text is one line per
-refusal, `ok   <name>` or `FAIL <name>: <detail>` per scenario, `schema: <mismatch>` per
-mismatch, then `<passed> of <total> scenarios passed`.
+A program or setting the toolset needs and the machine or the scenario's `host` lacks fails the
+run: when `make` answers `Missing`, the scenario fails naming it, the report records it once, and
+every other scenario's result is turned into a failure (`not counted: the run is missing ...`),
+so the summary counts no scenario as passed. There is no skipped state.
+
+The `Report` holds the refusals, what was missing, one result per scenario (`name`, `passed`,
+`detail`) and the schema mismatches; `passed()` is true only when all four are clean. Its text is
+one line per refusal, `missing: <program|setting> <name>` per missing item, `ok   <name>` or
+`FAIL <name>: <detail>` per scenario, `schema: <mismatch>` per mismatch, then `<passed> of
+<total> scenarios passed`, followed by `, <n> missing` when anything was.
 
 ### Mutants
 

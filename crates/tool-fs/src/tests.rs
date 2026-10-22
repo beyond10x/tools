@@ -51,11 +51,7 @@ fn a_path_that_climbs_out_or_starts_at_the_root_is_refused() {
         assert_eq!(refusal.name(), "fs.OutsideWorkspace", "{path}: {refusal}");
         assert_eq!(refusal.fields(), json!({ "path": path }));
         assert!(
-            local
-                .stat(&StatInput {
-                    path: path.to_owned()
-                })
-                .is_err(),
+            local.stat(&StatInput::new(path.to_owned())).is_err(),
             "{path} is as outside for stat as for read"
         );
     }
@@ -390,6 +386,7 @@ fn a_link_out_of_the_workspace_is_not_a_way_for_glob_to_read_what_is_outside() {
     let refusal = local
         .list(&ListInput {
             path: Some("out".to_owned()),
+            ..ListInput::default()
         })
         .expect_err("refused");
     assert_eq!(refusal.name(), "fs.OutsideWorkspace");
@@ -506,6 +503,7 @@ fn a_path_that_does_not_exist_is_not_found_and_a_dangling_link_is_too() {
     let refusal = local
         .list(&ListInput {
             path: Some("missing".to_owned()),
+            ..ListInput::default()
         })
         .expect_err("refused");
     assert_eq!(refusal.name(), "fs.NotFound");
@@ -527,9 +525,7 @@ fn stat_answers_an_entrys_own_kind() {
     let local = reading(inside.path());
 
     let file = local
-        .stat(&StatInput {
-            path: "./a.txt".to_owned(),
-        })
+        .stat(&StatInput::new("./a.txt".to_owned()))
         .expect("stat answers");
     assert_eq!(
         file,
@@ -538,13 +534,12 @@ fn stat_answers_an_entrys_own_kind() {
             kind: Kind::File,
             bytes: Some(8),
             sha256: Some(hex(&Sha256::digest(b"one\ntwo\n"))),
+            deadline_reached: false,
         }
     );
 
     let directory = local
-        .stat(&StatInput {
-            path: "sub".to_owned(),
-        })
+        .stat(&StatInput::new("sub".to_owned()))
         .expect("stat answers");
     assert_eq!(
         directory,
@@ -553,13 +548,12 @@ fn stat_answers_an_entrys_own_kind() {
             kind: Kind::Directory,
             bytes: None,
             sha256: None,
+            deadline_reached: false,
         }
     );
 
     let link = local
-        .stat(&StatInput {
-            path: "link".to_owned(),
-        })
+        .stat(&StatInput::new("link".to_owned()))
         .expect("stat answers");
     assert_eq!(
         link,
@@ -568,14 +562,13 @@ fn stat_answers_an_entrys_own_kind() {
             kind: Kind::Symlink,
             bytes: None,
             sha256: None,
+            deadline_reached: false,
         },
         "a link is a link under its own name, whatever it points at"
     );
 
     let root = local
-        .stat(&StatInput {
-            path: ".".to_owned(),
-        })
+        .stat(&StatInput::new(".".to_owned()))
         .expect("stat answers");
     assert_eq!(root.kind, Kind::Directory);
     assert_eq!(root.path, "");
@@ -596,9 +589,7 @@ fn stat_digests_a_file_of_at_most_the_counting_bound_and_not_one_over_it() {
     let local = reading(inside.path());
 
     let at = local
-        .stat(&StatInput {
-            path: "at.txt".to_owned(),
-        })
+        .stat(&StatInput::new("at.txt".to_owned()))
         .expect("stat answers");
     assert_eq!(at.kind, Kind::File);
     assert_eq!(at.bytes, Some(MAX_LINE_COUNT_BYTES));
@@ -613,9 +604,7 @@ fn stat_digests_a_file_of_at_most_the_counting_bound_and_not_one_over_it() {
     assert_eq!(read.sha256, at.sha256, "read and stat digest the same file");
 
     let over = local
-        .stat(&StatInput {
-            path: "over.txt".to_owned(),
-        })
+        .stat(&StatInput::new("over.txt".to_owned()))
         .expect("stat answers");
     assert_eq!(over.bytes, Some(MAX_LINE_COUNT_BYTES + 1));
     assert_eq!(over.sha256, None, "one byte over the bound is over 16 MiB");
@@ -999,9 +988,400 @@ fn a_single_line_over_the_counting_bound_stops_the_scan_inside_the_window() {
         &read.text[..16]
     );
     let stat = local
-        .stat(&StatInput {
-            path: "blob.bin".to_owned(),
-        })
+        .stat(&StatInput::new("blob.bin".to_owned()))
         .expect("stat answers");
     assert_eq!(stat.sha256, None, "stat agrees");
+}
+
+// The deadline (`fs` v1alpha2). A deadline of 0 is held by the suite; these stop a loop at a
+// known check with `Deadline::after_checks`, which a clock cannot do on every machine, so each
+// shows the deadline is checked inside the loop and not only before it.
+
+#[test]
+fn the_declared_timeout_bounds_are_the_ones_enforced() {
+    for operation in &contract().operations {
+        let bound = operation
+            .profile
+            .bounds
+            .timeout_ms
+            .expect("every operation declares timeout_ms");
+        assert_eq!(
+            bound.default,
+            Some(DEFAULT_TIMEOUT_MS),
+            "{}",
+            operation.name
+        );
+        assert_eq!(bound.max, Some(MAX_TIMEOUT_MS), "{}", operation.name);
+    }
+}
+
+#[test]
+fn a_timeout_above_the_maximum_is_refused_after_every_other_input_refusal() {
+    // Wave w4 D3: the path, the window and the glob are judged first, because those are the
+    // refusals a governor reads; `timeout_ms` above its maximum only on an input that is
+    // otherwise the operation's.
+    let dir = workspace();
+    fs::write(dir.path().join("a.txt"), "one\n").expect("the file is written");
+    fs::create_dir(dir.path().join("sub")).expect("the directory is made");
+    let local = reading(dir.path());
+    let over = Some(MAX_TIMEOUT_MS + 1);
+    let read = |input: ReadInput| {
+        local
+            .read(&ReadInput {
+                timeout_ms: over,
+                ..input
+            })
+            .map(|_| ())
+            .expect_err("refused")
+    };
+    let glob = |input: GlobInput| {
+        local
+            .glob(&GlobInput {
+                timeout_ms: over,
+                ..input
+            })
+            .map(|_| ())
+            .expect_err("refused")
+    };
+    let refusals = [
+        ("read outside", read(ReadInput::whole("../x.txt"))),
+        ("read missing", read(ReadInput::whole("missing.txt"))),
+        ("read a directory", read(ReadInput::whole("sub"))),
+        (
+            "read offset 0",
+            read(ReadInput {
+                offset: Some(0),
+                ..ReadInput::whole("a.txt")
+            }),
+        ),
+        (
+            "read limit 0",
+            read(ReadInput {
+                limit: Some(0),
+                ..ReadInput::whole("a.txt")
+            }),
+        ),
+        (
+            "list a file",
+            local
+                .list(&ListInput {
+                    path: Some("a.txt".to_owned()),
+                    timeout_ms: over,
+                })
+                .map(|_| ())
+                .expect_err("refused"),
+        ),
+        ("glob empty", glob(GlobInput::new(""))),
+        ("glob broken", glob(GlobInput::new("a[b"))),
+        (
+            "glob outside",
+            glob(GlobInput {
+                path: Some("..".to_owned()),
+                ..GlobInput::new("*.txt")
+            }),
+        ),
+        (
+            "stat missing",
+            local
+                .stat(&StatInput {
+                    timeout_ms: over,
+                    ..StatInput::new("missing.txt")
+                })
+                .map(|_| ())
+                .expect_err("refused"),
+        ),
+    ];
+    let names: Vec<(&str, &str)> = refusals
+        .iter()
+        .map(|(case, refusal)| (*case, refusal.name()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("read outside", "fs.OutsideWorkspace"),
+            ("read missing", "fs.NotFound"),
+            ("read a directory", "fs.NotAFile"),
+            ("read offset 0", "fs.InvalidWindow"),
+            ("read limit 0", "fs.InvalidWindow"),
+            ("list a file", "fs.NotADirectory"),
+            ("glob empty", "fs.InvalidGlob"),
+            ("glob broken", "fs.InvalidGlob"),
+            ("glob outside", "fs.OutsideWorkspace"),
+            ("stat missing", "fs.NotFound"),
+        ]
+    );
+}
+
+#[test]
+fn a_timeout_above_the_maximum_on_an_input_that_is_otherwise_the_operations_is_refused() {
+    let dir = workspace();
+    fs::write(dir.path().join("a.txt"), "one\n").expect("the file is written");
+    let local = reading(dir.path());
+    let over = Some(MAX_TIMEOUT_MS + 1);
+    let refused = [
+        local
+            .read(&ReadInput {
+                timeout_ms: over,
+                ..ReadInput::whole("a.txt")
+            })
+            .map(|_| ())
+            .expect_err("refused"),
+        local
+            .list(&ListInput {
+                timeout_ms: over,
+                ..ListInput::default()
+            })
+            .map(|_| ())
+            .expect_err("refused"),
+        local
+            .glob(&GlobInput {
+                timeout_ms: over,
+                ..GlobInput::new("*.txt")
+            })
+            .map(|_| ())
+            .expect_err("refused"),
+        local
+            .stat(&StatInput {
+                timeout_ms: over,
+                ..StatInput::new("a.txt")
+            })
+            .map(|_| ())
+            .expect_err("refused"),
+    ];
+    for refusal in &refused {
+        assert_eq!(refusal.name(), "fs.InvalidInput", "{refusal}");
+        assert_eq!(refusal.fields(), json!({}));
+        assert!(refusal.to_string().contains("60000"), "{refusal}");
+    }
+    let at_max = local.stat(&StatInput {
+        timeout_ms: Some(MAX_TIMEOUT_MS),
+        ..StatInput::new("a.txt")
+    });
+    assert!(
+        !at_max
+            .expect("the maximum itself is allowed")
+            .deadline_reached
+    );
+}
+
+#[test]
+fn a_read_whose_deadline_passes_between_lines_answers_the_lines_before_it() {
+    let dir = workspace();
+    fs::write(dir.path().join("four.txt"), "a\nb\nc\nd\n").expect("the file is written");
+    let read = reading(dir.path())
+        .read_within(&ReadInput::whole("four.txt"), &Deadline::after_checks(2))
+        .expect("the read answers");
+    assert_eq!(read.text, "     1\ta\n     2\tb\n");
+    assert_eq!(read.lines.to, 2);
+    assert_eq!(read.lines.total, None);
+    assert_eq!(read.lines_counted_to, Some(2));
+    assert_eq!(read.sha256, None);
+    assert!(read.truncated);
+    assert_eq!(read.truncated_lines, [0_u64; 0]);
+    assert!(read.deadline_reached);
+    assert!(
+        read.note
+            .as_deref()
+            .is_some_and(|note| note.contains("deadline")),
+        "{:?}",
+        read.note
+    );
+}
+
+#[test]
+fn a_read_whose_deadline_passes_inside_a_long_line_cuts_it_and_says_so() {
+    let dir = workspace();
+    fs::write(dir.path().join("long.txt"), "x".repeat(40_000)).expect("the file is written");
+    let read = reading(dir.path())
+        .read_within(&ReadInput::whole("long.txt"), &Deadline::after_checks(1))
+        .expect("the read answers");
+    assert_eq!(read.truncated_lines, [1], "the line it was in is cut");
+    assert_eq!(read.lines_counted_to, Some(1));
+    assert!(read.deadline_reached);
+    assert!(read.truncated);
+}
+
+#[test]
+fn a_line_the_deadline_cut_inside_a_character_ends_on_a_whole_character() {
+    // The first line fills all but 100 bytes of the reader's 8 KiB buffer, so the second line's
+    // first buffer is 100 bytes of three-byte characters: 33 of them and one byte of the 34th.
+    // The deadline passes before the next buffer (checks: line 1, line 2, then between
+    // buffers), and the window must not answer that one byte as U+FFFD.
+    let dir = workspace();
+    let body = format!("{}\n{}", "x".repeat(8_091), "€".repeat(5_000));
+    fs::write(dir.path().join("euro.txt"), body).expect("the file is written");
+    let read = reading(dir.path())
+        .read_within(&ReadInput::whole("euro.txt"), &Deadline::after_checks(2))
+        .expect("the read answers");
+    assert!(read.deadline_reached);
+    assert!(!read.text.contains('\u{FFFD}'), "{:?}", read.text);
+    let second = read
+        .text
+        .lines()
+        .nth(1)
+        .and_then(|line| line.strip_prefix("     2\t"))
+        .expect("line 2 is answered");
+    assert!(
+        !second.is_empty() && second.chars().all(|c| c == '€'),
+        "{second:?}"
+    );
+    assert_eq!(read.truncated_lines, [1, 2], "both lines are cut");
+}
+
+#[test]
+fn a_line_the_counting_bound_cut_inside_a_character_is_cut_and_ends_on_a_whole_character() {
+    // The same class as the deadline's cut: 16384 lines of 1 KiB are exactly the counting
+    // bound, so the scan may take one byte more, the first of a three-byte character on line
+    // 16385. That line is in the window here; it is cut, so it is listed, and the one byte is
+    // not answered as U+FFFD.
+    let dir = workspace();
+    let line = format!("{}\n", "x".repeat(1_023));
+    let mut body = line.repeat(16 * 1_024);
+    body.push_str(&"€".repeat(10));
+    fs::write(dir.path().join("bound.txt"), body).expect("the file is written");
+    let read = reading(dir.path())
+        .read(&ReadInput::lines("bound.txt", 16_385, 1))
+        .expect("the read answers");
+    assert_eq!(read.lines_counted_to, Some(16_385));
+    assert!(!read.text.contains('\u{FFFD}'), "{:?}", read.text);
+    assert_eq!(read.text, " 16385\t\n");
+    assert_eq!(read.truncated_lines, [16_385]);
+    assert!(read.truncated);
+}
+
+#[test]
+fn a_line_the_counting_bound_stops_is_whole_only_where_its_line_ending_comes_next() {
+    // `next_line` with a budget that runs out after "ab", or after "ab\r", over a one-byte
+    // buffer, so a `\r` after the bound is alone in the buffer and the byte after it has to be
+    // looked at too.
+    let line = |bytes: &'static [u8], budget: u64| {
+        let mut reader = io::BufReader::with_capacity(1, bytes);
+        let mut digest = Sha256::new();
+        let line = next_line(&mut reader, 64, &mut digest, budget, &Deadline::never())
+            .expect("the bytes read")
+            .expect("a line");
+        (String::from_utf8(line.kept).expect("UTF-8"), line.whole)
+    };
+    assert_eq!(line(b"ab\nc", 2), ("ab".to_owned(), true), "a \\n next");
+    assert_eq!(
+        line(b"ab\r\nc", 2),
+        ("ab".to_owned(), true),
+        "a \\r\\n next"
+    );
+    assert_eq!(
+        line(b"ab\r\nc", 3),
+        ("ab".to_owned(), true),
+        "the bound between the \\r and its \\n: the \\r is the line ending's"
+    );
+    assert_eq!(line(b"ab", 2), ("ab".to_owned(), true), "the end next");
+    assert_eq!(
+        line(b"abc", 2),
+        ("ab".to_owned(), false),
+        "the line goes on"
+    );
+    assert_eq!(
+        line(b"ab\rc", 2),
+        ("ab".to_owned(), false),
+        "a lone \\r is the line's"
+    );
+    assert_eq!(
+        line(b"ab\r", 2),
+        ("ab".to_owned(), false),
+        "a \\r at the end of the file is the line's"
+    );
+    assert_eq!(
+        line(b"ab\r", 3),
+        ("ab\r".to_owned(), true),
+        "and is kept when the bound took it"
+    );
+}
+
+#[test]
+fn a_listing_whose_deadline_passes_while_reading_answers_the_entries_read() {
+    let dir = workspace();
+    for name in ["a", "b", "c", "d", "e"] {
+        fs::write(dir.path().join(name), name).expect("the file is written");
+    }
+    let listed = reading(dir.path())
+        .list_within(&ListInput::default(), &Deadline::after_checks(3))
+        .expect("the listing answers");
+    assert_eq!(listed.entries.len(), 3, "{listed:?}");
+    let names: Vec<&str> = listed.entries.iter().map(|e| e.name.as_str()).collect();
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    assert_eq!(names, sorted, "in name order");
+    assert!(listed.truncated);
+    assert!(listed.deadline_reached);
+}
+
+#[test]
+fn a_listing_whose_deadline_passes_while_answering_stops_there() {
+    let dir = workspace();
+    for name in ["a", "b", "c", "d", "e"] {
+        fs::write(dir.path().join(name), name).expect("the file is written");
+    }
+    // One check before the directory is read, one after each of its five entries, then one
+    // before each entry answered: the eighth passes, before the second entry.
+    let listed = reading(dir.path())
+        .list_within(&ListInput::default(), &Deadline::after_checks(7))
+        .expect("the listing answers");
+    let names: Vec<&str> = listed.entries.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["a"]);
+    assert!(listed.truncated);
+    assert!(listed.deadline_reached);
+}
+
+#[test]
+fn a_glob_whose_deadline_passes_in_the_walk_answers_the_matches_before_it() {
+    let dir = workspace();
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        fs::write(dir.path().join(name), name).expect("the file is written");
+    }
+    // The frame's check, one after each entry listed, then one before each entry walked: the
+    // sixth passes, before `b.txt`.
+    let found = reading(dir.path())
+        .glob_within(&GlobInput::new("*.txt"), &Deadline::after_checks(5))
+        .expect("the glob answers");
+    assert_eq!(found.paths, ["a.txt"]);
+    assert!(found.truncated);
+    assert!(found.deadline_reached);
+}
+
+#[test]
+fn a_stat_whose_deadline_passes_inside_the_digest_answers_no_digest() {
+    let dir = workspace();
+    fs::write(dir.path().join("three.bin"), vec![7_u8; 3 * 64 * 1024]).expect("written");
+    let local = reading(dir.path());
+    let stopped = local
+        .stat_within(&StatInput::new("three.bin"), &Deadline::after_checks(1))
+        .expect("stat answers");
+    assert_eq!(stopped.bytes, Some(3 * 64 * 1024));
+    assert_eq!(stopped.sha256, None);
+    assert!(stopped.deadline_reached);
+    let whole = local
+        .stat_within(&StatInput::new("three.bin"), &Deadline::never())
+        .expect("stat answers");
+    assert!(whole.sha256.is_some());
+    assert!(!whole.deadline_reached);
+}
+
+#[test]
+fn ignore_deadline_never_stops_and_still_refuses_above_the_maximum() {
+    let dir = workspace();
+    fs::write(dir.path().join("a.txt"), "a\n").expect("the file is written");
+    let mutant = Fs::mutated(dir.path(), Mutation::IgnoreDeadline).expect("the workspace opens");
+    let read = mutant
+        .read(&ReadInput {
+            timeout_ms: Some(0),
+            ..ReadInput::whole("a.txt")
+        })
+        .expect("the read answers");
+    assert!(!read.deadline_reached);
+    let refusal = mutant
+        .read(&ReadInput {
+            timeout_ms: Some(MAX_TIMEOUT_MS + 1),
+            ..ReadInput::whole("a.txt")
+        })
+        .expect_err("refused");
+    assert_eq!(refusal.name(), "fs.InvalidInput");
 }

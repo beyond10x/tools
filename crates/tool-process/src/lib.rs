@@ -115,10 +115,16 @@ pub enum Mutation {
     NoOutputCap,
     /// A caller's `timeout_ms` above the maximum is not capped.
     NoTimeoutCap,
+    /// The program is reaped as soon as it is seen to have ended, so a kill at the bound after
+    /// that names the group by a pid that is free again.
+    ReapBeforeKill,
 }
 
 impl Mutation {
-    /// Every mutation, in declaration order.
+    /// Every mutation the conformance suite is checked against, in declaration order: all but
+    /// [`Mutation::ReapBeforeKill`]. What that one drops shows only when another process takes
+    /// the freed pid as its group's id within the bound, which no scenario can arrange, so the
+    /// crate's own unit tests hold it, by whether the program is still unreaped at the kill.
     pub const ALL: [Self; 7] = [
         Self::NoProgramCheck,
         Self::InheritAll,
@@ -139,6 +145,7 @@ impl Mutation {
             Self::KillOnlyALiveProgram => "kill-only-a-live-program",
             Self::NoOutputCap => "no-output-cap",
             Self::NoTimeoutCap => "no-timeout-cap",
+            Self::ReapBeforeKill => "reap-before-kill",
         }
     }
 }
@@ -311,11 +318,11 @@ impl Process {
         // timed out.
         let bound = self.bound(input.timeout_ms, remaining);
         let deadline = Instant::now().checked_add(bound);
-        let mut ended = None;
+        let mut ended = false;
         let timed_out = loop {
-            if ended.is_none() {
-                match child.try_wait() {
-                    Ok(status) => ended = status,
+            if !ended {
+                match self.ended(&mut child) {
+                    Ok(now) => ended = now,
                     Err(source) => {
                         // Harness returned here and left the program running with nobody to stop
                         // it.
@@ -324,7 +331,7 @@ impl Process {
                     }
                 }
             }
-            if ended.is_some() && out.finished() && err.finished() {
+            if ended && out.finished() && err.finished() {
                 break false;
             }
             if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
@@ -332,14 +339,18 @@ impl Process {
             }
             thread::sleep(POLL);
         };
-        if timed_out && (ended.is_none() || !self.mutated_by(Mutation::KillOnlyALiveProgram)) {
-            // The whole group, whether or not the program itself has already ended.
+        if timed_out && (!ended || !self.mutated_by(Mutation::KillOnlyALiveProgram)) {
+            // The whole group, whether or not the program itself has already ended. An ended
+            // program is still unreaped here, so the pid that names the group is still its own.
+            #[cfg(all(test, target_os = "linux"))]
+            tests::seen_at_kill(&child);
             self.stop(&mut child);
         }
-        let status = match ended {
-            Some(status) => status,
-            None => child.wait().map_err(wait_failed)?,
-        };
+        // Reaped only now, after the kill. Not after the settle: an unreaped program is still a
+        // member of its group, so the settle would never see the group gone and would always
+        // wait out the whole of it. The settle only asks whether the group is there; it sends
+        // no signal that could reach another process's group.
+        let status = child.wait().map_err(wait_failed)?;
         if timed_out {
             self.settle(&child, &out, &err);
         }
@@ -429,6 +440,15 @@ impl Process {
             })
     }
 
+    /// Whether the program has ended, asked without reaping it where the system can, so its pid
+    /// stays taken, and the group it names stays the run's own, until the run reaps it.
+    fn ended(&self, child: &mut Child) -> std::io::Result<bool> {
+        if self.mutated_by(Mutation::ReapBeforeKill) {
+            return child.try_wait().map(|status| status.is_some());
+        }
+        ended_unreaped(child)
+    }
+
     /// Stops the program at the bound: its whole process group.
     fn stop(&self, child: &mut Child) {
         if self.mutated_by(Mutation::NoKill) {
@@ -471,9 +491,41 @@ const SETTLE: Duration = Duration::from_millis(500);
 /// How often a killed run looks again while it settles.
 const SETTLE_POLL: Duration = Duration::from_millis(5);
 
+/// Whether the child has ended, by `waitid(P_PID, pid, WEXITED | WNOHANG | WNOWAIT)`: an ended
+/// child is left unreaped, so its pid cannot be given to another process, and so cannot become
+/// the id of another process's group, while the run may still signal the group by it.
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    all(target_os = "linux", not(target_env = "uclibc")),
+))]
+fn ended_unreaped(child: &Child) -> std::io::Result<bool> {
+    use nix::sys::wait::{Id, WaitPidFlag, WaitStatus, waitid};
+    use nix::unistd::Pid;
+
+    let pid = i32::try_from(child.id()).map_err(std::io::Error::other)?;
+    let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
+    match waitid(Id::Pid(Pid::from_raw(pid)), flags) {
+        Ok(WaitStatus::StillAlive) => Ok(false),
+        Ok(_) => Ok(true),
+        Err(errno) => Err(errno.into()),
+    }
+}
+
+/// Whether the child has ended, where there is no `waitid` to ask without reaping it.
+#[cfg(not(any(
+    target_os = "android",
+    target_os = "freebsd",
+    all(target_os = "linux", not(target_env = "uclibc")),
+)))]
+fn ended_unreaped(child: &mut Child) -> std::io::Result<bool> {
+    child.try_wait().map(|status| status.is_some())
+}
+
 /// Kills the child's whole process group, then the child itself. The group is named by the
-/// child's pid, which stays the group's id while any member is alive, so this reaches a
-/// descendant even after the child itself has ended and been reaped.
+/// child's pid, which stays the group's id while any member is alive, and which is still the
+/// child's own because the child is reaped only after this, so this reaches a descendant after
+/// the child itself has ended and is never sent to another process's group.
 #[cfg(unix)]
 fn terminate(child: &mut Child) {
     use nix::sys::signal::{Signal, killpg};

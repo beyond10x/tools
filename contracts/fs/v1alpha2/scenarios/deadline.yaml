@@ -1,0 +1,169 @@
+format: tool-conformance/1
+toolset: fs
+version: v1alpha2
+scenarios:
+  - name: a-read-with-a-deadline-of-0-stops-before-the-first-line
+    holds: [bounds, paging]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.read, input: {path: a.txt, timeout_ms: 0}}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        bytes: 8
+        text: ""
+        lines: {from: 1, to: 0, total: {$absent: true}}
+        truncated: true
+        truncated_lines: []
+        sha256: {$absent: true}
+        lines_counted_to: 0
+        note: {$contains: deadline}
+        deadline_reached: true
+      files: {a.txt: unchanged}
+  - name: a-read-at-its-deadline-answers-a-window-past-the-lines-reached-as-empty
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.read, input: {path: a.txt, offset: 5, timeout_ms: 0}}
+    expect:
+      outcome: ok
+      output:
+        text: ""
+        lines: {from: 5, to: 4, total: {$absent: true}}
+        truncated: true
+        deadline_reached: true
+  - name: a-read-inside-its-deadline-answers-deadline-reached-false
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.read, input: {path: a.txt, timeout_ms: 60000}}
+    expect:
+      outcome: ok
+      output:
+        text: "     1\tone\n     2\ttwo\n"
+        lines: {from: 1, to: 2, total: 2}
+        truncated: false
+        sha256: {$sha256_of: a.txt}
+        lines_counted_to: {$absent: true}
+        note: {$absent: true}
+        deadline_reached: false
+  - name: a-read-that-names-no-deadline-is-given-the-default
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.read, input: {path: a.txt}}
+    expect:
+      outcome: ok
+      output:
+        truncated: false
+        sha256: {$sha256_of: a.txt}
+        deadline_reached: false
+  - name: a-read-with-a-deadline-above-the-maximum-is-refused
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.read, input: {path: a.txt, timeout_ms: 60001}}
+    expect:
+      error: fs.InvalidInput
+      files: {a.txt: unchanged}
+  - name: a-path-that-climbs-out-is-refused-whatever-its-deadline
+    holds: [bounds, subjects]
+    call: {operation: fs.read, input: {path: ../x.txt, timeout_ms: 0}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: ../x.txt}
+  - name: a-listing-with-a-deadline-of-0-answers-no-entry-and-is-truncated
+    holds: [bounds, paging]
+    fixture:
+      files: {a.txt: "a", b.txt: "b"}
+    call: {operation: fs.list, input: {timeout_ms: 0}}
+    expect:
+      outcome: ok
+      output:
+        path: ""
+        entries: []
+        truncated: true
+        deadline_reached: true
+  - name: a-listing-inside-its-deadline-answers-deadline-reached-false
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "a", b.txt: "b"}
+    call: {operation: fs.list, input: {timeout_ms: 60000}}
+    expect:
+      outcome: ok
+      output:
+        entries:
+          - {name: a.txt, kind: file, bytes: 1}
+          - {name: b.txt, kind: file, bytes: 1}
+        truncated: false
+        deadline_reached: false
+  - name: a-listing-with-a-deadline-above-the-maximum-is-refused
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "a"}
+    call: {operation: fs.list, input: {timeout_ms: 60001}}
+    expect:
+      error: fs.InvalidInput
+  - name: a-glob-with-a-deadline-of-0-answers-no-path-and-is-truncated
+    holds: [bounds, paging]
+    fixture:
+      files: {a.txt: "a", sub/b.txt: "b"}
+    call: {operation: fs.glob, input: {glob: "*.txt", timeout_ms: 0}}
+    expect:
+      outcome: ok
+      output:
+        paths: []
+        truncated: true
+        depth_bound_reached: false
+        deadline_reached: true
+  - name: a-glob-inside-its-deadline-answers-deadline-reached-false
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "a", sub/b.txt: "b"}
+    call: {operation: fs.glob, input: {glob: "*.txt", timeout_ms: 60000}}
+    expect:
+      outcome: ok
+      output:
+        paths: [a.txt, sub/b.txt]
+        truncated: false
+        deadline_reached: false
+  - name: a-glob-with-a-deadline-above-the-maximum-is-refused
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "a"}
+    call: {operation: fs.glob, input: {glob: "*.txt", timeout_ms: 60001}}
+    expect:
+      error: fs.InvalidInput
+  - name: a-stat-with-a-deadline-of-0-answers-the-size-without-the-digest
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.stat, input: {path: a.txt, timeout_ms: 0}}
+    expect:
+      outcome: ok
+      output:
+        path: a.txt
+        kind: file
+        bytes: 8
+        sha256: {$absent: true}
+        deadline_reached: true
+  - name: a-stat-inside-its-deadline-answers-deadline-reached-false
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.stat, input: {path: a.txt, timeout_ms: 60000}}
+    expect:
+      outcome: ok
+      output:
+        kind: file
+        bytes: 8
+        sha256: {$sha256_of: a.txt}
+        deadline_reached: false
+  - name: a-stat-with-a-deadline-above-the-maximum-is-refused
+    holds: [bounds]
+    fixture:
+      files: {a.txt: "one\ntwo\n"}
+    call: {operation: fs.stat, input: {path: a.txt, timeout_ms: 60001}}
+    expect:
+      error: fs.InvalidInput

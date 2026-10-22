@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T00:54:46Z",
+  "actor": "human:timo",
+  "artifact": "story:process-kill-never-reaches-a-reused-group",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo-serial.sh test -p b10x-tool-process --locked --no-fail-fast",
+    "reference": "process-kill/scratch/red.log (base: left Some(Err(ECHILD))) vs process-kill/scratch/coordinator-treatment.log (exit 0, the_kill_at_the_bound_names_a_group_whose_ended_shell_is_not_yet_reaped ok)"
+  }
+}
