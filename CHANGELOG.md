@@ -6,6 +6,12 @@ the bare version.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-23
+
+Wave w4: the process-group kill that never reaches a reused group, the `fs` and `search` timeouts
+enforced in v1alpha2, and the conformance runner's host keys, served fixtures and call sequences.
+harness pins this tag.
+
 ### Added
 
 - `fs` v1alpha2 and `search` v1alpha2 contracts: v1alpha1 plus an optional `timeout_ms` input
