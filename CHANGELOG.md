@@ -6,6 +6,13 @@ the bare version.
 
 ## [Unreleased]
 
+### Changed
+
+- The design no longer plans a connector projection in tools (ADR 0103): Connectors publishes
+  `tool-contract/1` documents for its operations, tools reads none of its descriptors, and the
+  `connectors` port leaves the first set of ports. `docs/design/tool-contracts.md`
+  § Connector contracts replaces § Connector projections. No code changes; none had been built.
+
 ## [0.5.0] - 2026-10-23
 
 Wave w4: the process-group kill that never reaches a reused group, the `fs` and `search` timeouts

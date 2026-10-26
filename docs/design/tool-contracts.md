@@ -63,7 +63,7 @@ the contract, never the source.
 | `delegation` | spawn, await, message |
 | `memory` | remember, recall, forget |
 | `interaction` | ask the user, notify |
-| `tool-meta` | search, describe, invoke, activate, over every contract the host offers, including connector operations projected into contracts ([§ Connector projections](#connector-projections)) |
+| `tool-meta` | search, describe, invoke, activate, over every contract the host offers, including the contracts Connectors publishes for its operations ([§ Connector contracts](#connector-contracts)) |
 | `control` | turn done, plan and todo |
 
 `fs` and `code-editor` come first: every harness has them, and they exercise most profile
@@ -73,8 +73,7 @@ properties (subjects, preconditions, paging, idempotency).
 
 Added 2026-10-21, from the operator's request for a fetch whose summarizer is "a contract the
 harness fulfils and injects". A **port** is a dependency an operation needs from its host: a guarded
-HTTP client, a search provider, a summarizing model, the connectors host, the host's catalogue of
-offered tools.
+HTTP client, a search provider, a summarizing model, the host's catalogue of offered tools.
 
 - A port is a `tool-contract/1` document with `kind: port`, at `contracts/<port>/<version>/` like a
   toolset. Its operations carry the full profile, so a governor reads a summarizer's `effects` the
@@ -92,18 +91,22 @@ offered tools.
 - Offering: an operation whose ports are not all bound is not offered. `Toolset::offered` answers
   the offered set; it defaults to every operation.
 
-Port names in the first set: `egress`, `websearch`, `summarize`, `connectors`, `catalogue`.
+Port names in the first set: `egress`, `websearch`, `summarize`, `catalogue`.
 
-## Connector projections
+## Connector contracts
 
-A connectors `Descriptor` names operations, their JSON Schemas and a provider profile string
-(`"profile":"tavily/2026-10"` in `connectors/adapters/tavily/generated/descriptor.json`); it carries
-no effects or risk. A **projection** (`tool-projection/1`, defined in the profile document) is a
-host-authored document that selects connector operations, renames them, hides input fields the
-host fills, and gives each selected operation its full `tool-contract/1` profile. `crates/tool-connector`
-turns a descriptor and a projection into an in-memory contract (`toolset: connector-<instance>`)
-whose operations invoke through the `connectors` port. A projected contract never lands under
-`contracts/`. "Call any configured connector" is `tool-meta` over the projected contracts.
+Decided in ADR 0103 (2026-10-21): [Connectors](https://github.com/beyond10x/connectors) publishes a
+`tool-contract/1` document for each operation it admits, with the operation's full profile authored
+beside the adapter that knows what the operation does, and its implementation passes
+`tool-conformance/1`. Connectors pins `b10x-tool-contract` by tag. Credentials, connection choice,
+the grant check and approval evidence stay in Connectors' governed invocation; a contract names no
+credential.
+
+tools reads none of Connectors' descriptors: it has no connectors port, no projection document and
+no `crates/tool-connector`. "Call any configured connector" is `tool-meta` over the contracts the
+host's `catalogue` offers; the host's `catalogue` implementation reaches Connectors, `tool-meta`
+does not. The story that makes Connectors publish its contracts is Connectors'
+`story:connector-projection`.
 
 ## Conformance
 
