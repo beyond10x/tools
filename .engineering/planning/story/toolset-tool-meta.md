@@ -8,7 +8,6 @@ relations:
 - decomposes: epic:tool-contracts
 - depends_on: story:profile-declares-ports
 - informed_by: story:toolset-connector
-- depends_on: story:connector-projection
 scope:
 - confidence: inferred
   path: Cargo.lock
@@ -20,24 +19,31 @@ scope:
   path: crates/tool-meta
 - confidence: inferred
   path: crates/tool-ports/src/catalogue.rs
-revision: 4
+revision: 7
 ---
 ## Outcome
 
 The `tool-meta` v1alpha1 toolset (`tool.search`, `tool.describe`, `tool.invoke`, `tool.activate`)
 and the `catalogue` v1alpha1 port have contracts and conformance suites, and `crates/tool-meta`
-passes them. A model finds and calls any operation the host offers, projected connector operations
-included, and `tool.invoke` itself refuses a target outside the grant the host set.
+passes them. A model finds and calls any operation the host offers, the contracts Connectors
+publishes for its operations included, and `tool.invoke` itself refuses a target outside the grant
+the host set.
 
 ## Context
 
 The request (operator, 2026-10-21): a tool able to call any configured connector, or projections of
 it. The design lists `tool-meta` (search, describe, invoke, activate,
 `docs/design/tool-contracts.md` § Toolsets) and the inventory counts 9 tool meta layers
-(`docs/inventory.md:24`); with connector operations projected into contracts
-(`story:connector-projection`), calling any connector is this toolset over the projected contracts,
-not a second meta layer. Round 1 of the plan review archived the earlier draft of a separate
-connector toolset for that reason.
+(`docs/inventory.md:24`). Round 1 of the plan review archived the earlier draft of a separate
+connector toolset, since calling any connector is this toolset over contracts, not a second meta
+layer.
+
+Amended 2026-10-26 per ADR 0103 decision 6 (`approval-record:connector-projection-moves-to-connectors`):
+Connectors publishes a `tool-contract/1` document for each admitted operation
+(https://github.com/beyond10x/connectors, `story:connector-projection`), so this story no longer
+depends on a projection in tools. The toolset is provider-generic: it reads offered contracts through
+the `catalogue` port, and nothing in it reads a connectors descriptor. The host's `catalogue`
+implementation reaches Connectors; `tool-meta` does not.
 
 ## Contracts
 
@@ -87,9 +93,12 @@ contracts with an offered flag each (`crates/tool-ports/src/catalogue.rs`).
 
 Fixture catalogue (in `Recorder`): `t.low` (risk low, `[read]`), `t.high` (risk high,
 `[network, external]`), `t.ext` (`[network]`, consequences `[send-external]`, risk high), `t.hidden` (not offered), `t.deferred` (offered only after
-activation), and `connector-tavily.search` projected from `story:connector-projection`'s fixtures
-with the `connectors` `Table` fixture behind it. Grant: `{max_risk: high, effects_within: [read,
-network, secret, external], consequences_within: []}` unless a bullet says otherwise.
+activation), and `connector-tavily.search`, a `tool-contract/1` document of the shape Connectors
+publishes for an admitted operation (Connectors' `adapters/tavily/generated/tool-contract.yaml`
+once it ships; until then a document of that shape with risk above `low` and effects within
+`[network, external]`), kept under `crates/tool-meta/tests/fixtures/` and served with a recorded
+result by the `catalogue` `Table` fixture. Grant: `{max_risk: high, effects_within: [read, network, secret,
+external], consequences_within: []}` unless a bullet says otherwise.
 
 - `tool.search` answers `t.low`, `t.high`, `t.ext` and `connector-tavily.search`, not `t.hidden`
   or `t.deferred`.
@@ -105,7 +114,9 @@ network, secret, external], consequences_within: []}` unless a bullet says other
 - `tool.invoke t.low` with a stale digest answers `tool.ProfileChanged`.
 - `tool.search`, then `tool.activate [t.deferred]`, then `tool.search` (`calls`): the first answer
   lacks `t.deferred`, the third has it.
-- `tool.invoke connector-tavily.search` with its digest answers the `connectors` table result.
+- `tool.invoke connector-tavily.search` with its digest answers the result the `catalogue` `Table`
+  fixture holds for it, and `.ports/catalogue.jsonl` has one `catalogue.invoke` line naming
+  `connector-tavily.search`.
 - A result above `output_bytes` answers `truncated: true`.
 - Two identical `tool.invoke t.low` calls leave two `catalogue.invoke` lines.
 

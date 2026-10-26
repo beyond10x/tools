@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:connector-projection
 kind: story
-status: draft
+status: archived
 title: A connectors descriptor projects to tool-contract operations, selected and renamed
 relations:
 - decomposes: epic:tool-contracts
@@ -18,15 +18,29 @@ scope:
   path: crates/tool-connector
 - confidence: inferred
   path: crates/tool-ports/src/connectors.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-26T15:35:59Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":7}}}
 ---
 ## Outcome
 
-`crates/tool-connector` turns a connectors `Descriptor` and a host-authored `tool-projection/1`
-document into an in-memory `tool-contract/1` contract, one operation per selected connector
-operation, each with the full profile the projection gives it, and runs those operations through
-the `connectors` v1alpha1 port. A host offers connector operations as tools from this one function
-instead of compiling them itself.
+Archived on 2026-10-26, before any work: the story moved to the Connectors repository
+(https://github.com/beyond10x/connectors), where it is `story:connector-projection` under
+`epic:tool-contract-publication`. ADR 0103 decision 5: Connectors emits a `tool-contract/1` document
+per admitted operation and passes `tool-conformance/1`; the profile and the input fields the
+connection fills (this story's `omit`) move into Connectors' operation definition; which operations a
+run sees stays the harness's grant. Decision 3: tools takes no dependency on the connectors
+descriptor format, and `crates/tool-connector`, `contracts/connectors/v1alpha1`, the `Connectors`
+port and the `tool-projection/1` section are not built here. Recorded in
+`approval-record:connector-projection-moves-to-connectors`.
+
+The outcome as drafted, kept with the sections below as the record of the plan this replaces:
+
+> `crates/tool-connector` turns a connectors `Descriptor` and a host-authored `tool-projection/1`
+> document into an in-memory `tool-contract/1` contract, one operation per selected connector
+> operation, each with the full profile the projection gives it, and runs those operations through
+> the `connectors` v1alpha1 port. A host offers connector operations as tools from this one function
+> instead of compiling them itself.
 
 ## Context
 

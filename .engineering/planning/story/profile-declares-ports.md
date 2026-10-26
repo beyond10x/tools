@@ -26,7 +26,7 @@ scope:
   path: crates/tool-contract/tests/fixtures/ports
 - confidence: inferred
   path: crates/tool-ports
-revision: 6
+revision: 9
 ---
 ## Outcome
 
@@ -63,7 +63,7 @@ synchronous caller-supplied runner (`crates/tool-toolchain/src/executor.rs:396`,
   operations minus those that name the port. A port document has no `Toolset`, so a port operation
   is never offered.
 - `crates/tool-ports` (new): `src/lib.rs` with one `mod` line per port in the first set
-  (`egress`, `websearch`, `summarize`, `connectors`, `catalogue`) and an empty `src/<port>.rs`
+  (`egress`, `websearch`, `summarize`, `catalogue`; no `connectors` port, ADR 0103) and an empty `src/<port>.rs`
   each, so a port story edits only its own file; the `fixtures` feature in `Cargo.toml`; and
   `Recorder<P>`, which wraps any port implementation and appends one JSON line per call to
   `.ports/<port>.jsonl`: `{"operation": "<port op>", "input": {…}, "outcome": "ok" | "<error
@@ -73,7 +73,7 @@ synchronous caller-supplied runner (`crates/tool-toolchain/src/executor.rs:396`,
   behalf, may keep its input and may spend credit. `output.untrusted` becomes declarative
   (validator-only): the harness applies it from the contract, so no scenario observes it.
 - A `Json` primitive joins the type grammar: any JSON value, schema shape `Any`, for inputs and
-  answers whose shape is another contract's (`tool.invoke`, projected connector operations).
+  answers whose shape is another contract's (`tool.invoke`, the contracts Connectors publishes).
 
 ## Scope
 
@@ -82,7 +82,7 @@ synchronous caller-supplied runner (`crates/tool-toolchain/src/executor.rs:396`,
 - `crates/tool-contract/src/document.rs`, `validate.rs`, `types.rs`, `conformance.rs`
   (`offered`), `bin/tool-contract.rs`
 - `crates/tool-contract/tests/fixtures/ports/` (new)
-- `crates/tool-ports/` (new: `Cargo.toml`, `src/lib.rs`, `src/recorder.rs`, the five empty
+- `crates/tool-ports/` (new: `Cargo.toml`, `src/lib.rs`, `src/recorder.rs`, the four empty
   `src/<port>.rs`)
 - `Cargo.lock`: shared with every new-crate story below; units merge serially into the wave branch
   (AGENTS.md § Branches and waves) and the later one regenerates it.
@@ -114,6 +114,7 @@ one operation `probe.call` (effects `[external]`, consequences `[money]`, risk h
 ## Not in this story
 
 - Any real port document: `egress` (`story:toolset-http`), `websearch` (`story:toolset-web`),
-  `summarize` (`story:web-ask-through-summarize-port`), `connectors`
-  (`story:connector-projection`), `catalogue` (`story:toolset-tool-meta`).
+  `summarize` (`story:web-ask-through-summarize-port`), `catalogue` (`story:toolset-tool-meta`).
+  There is no `connectors` port: Connectors publishes `tool-contract/1` documents for its
+  operations (ADR 0103, `approval-record:connector-projection-moves-to-connectors`).
 - Harness binding: harness and metaharness adopt in their own repositories.

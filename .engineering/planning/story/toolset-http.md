@@ -18,7 +18,7 @@ scope:
   path: crates/tool-http
 - confidence: inferred
   path: crates/tool-ports/src/egress.rs
-revision: 6
+revision: 7
 ---
 ## Outcome
 
@@ -27,8 +27,9 @@ The `http` v1alpha1 toolset (`http.get`, `http.request`) and the `egress` v1alph
 `crates/tool-http` passes them. `crates/tool-http` holds the default `egress` implementation: a
 blocking client that judges the address it connects to, connects to that address, re-checks every
 redirect, caps the decoded body and never sends a secret to a host it was not declared for.
-`web` and `browser` reach the network only through `egress`; the connectors host's own client is
-outside it (`story:connector-projection`).
+`web` and `browser` reach the network only through `egress`; the client Connectors invokes its
+operations with is outside it and stays in Connectors (ADR 0103,
+https://github.com/beyond10x/connectors).
 
 ## Context
 
