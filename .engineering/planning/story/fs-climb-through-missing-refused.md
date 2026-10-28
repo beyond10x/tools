@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: story:fs-climb-through-missing-refused
 kind: story
-status: draft
+status: proposed
 title: fs refuses a climb out of the workspace through a missing component as OutsideWorkspace
 relations:
 - decomposes: epic:tool-contracts
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T13:14:50Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
@@ -28,3 +30,8 @@ Not run yet: the claim rests on the code read.
 
 - `crates/tool-fs/src/lib.rs` (`resolve`)
 - `contracts/fs/v1alpha2/scenarios/` (a new scenario; v1alpha1 stays unchanged)
+
+## Acceptance
+
+- A test in `crates/tool-fs/tests/` asks `fs` to read `missing/../../x`, where `x` exists beside the workspace root and `missing` does not exist, and gets `OutsideWorkspace`; `../x` still gets `OutsideWorkspace`, and `missing/x` inside the root still gets the not-found refusal it gets today.
+- A new scenario under `contracts/fs/v1alpha2/scenarios/` holds the same refusal, and the conformance run of `crates/tool-fs/tests/conformance.rs` executes it.
