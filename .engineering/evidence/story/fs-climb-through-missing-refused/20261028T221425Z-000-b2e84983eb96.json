@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T22:14:25Z",
+  "actor": "agent:takt",
+  "artifact": "story:fs-climb-through-missing-refused",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "takt",
+    "reference": ".takt/cases/story-fs-climb-through-missing-refused-20261028T213041Z/evidence/0004-test-result-6.json#sha256=ba181ad3ee4093192fafd8bab7aa47c548f506245c7c56b9a00efcbc5a64cdbb&result=pass&revision=687068c33db47c8072d95f186b5835e3b2806192&producer=takt.tests-run"
+  }
+}
