@@ -31,7 +31,8 @@ include!(concat!(env!("OUT_DIR"), "/documents.rs"));
 
 static CONTRACTS: [OnceLock<Contract>; COUNT] = [const { OnceLock::new() }; COUNT];
 
-/// Every document, sorted by toolset and then by version.
+/// Every document, sorted by the byte order of the toolset directory name and then of the version
+/// directory name. This is not version precedence: `v1 < v10 < v1alpha1 < v2`.
 pub fn all() -> &'static [Document] {
     &DOCUMENTS
 }

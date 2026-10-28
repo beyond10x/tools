@@ -1,6 +1,7 @@
 //! `tool-contract validate <dir>`: finds every `contract.yaml` under `<dir>`, validates each
 //! against the `tool-contract/1` profile, and checks each sibling `scenarios/` directory covers
-//! the profile. Prints `ok <path>` per accepted document or one line per refusal; exits 1 on any.
+//! the profile and that its `<toolset>/<version>` directory names are ones the build script can
+//! embed. Prints `ok <path>` per accepted document or one line per refusal; exits 1 on any.
 
 use std::fs;
 use std::io;
@@ -50,13 +51,16 @@ fn validate_dir(dir: &Path) -> ExitCode {
     }
     let mut refused = false;
     for path in documents {
-        match check_document(&path) {
-            Ok(()) => println!("ok {}", path.display()),
-            Err(lines) => {
-                refused = true;
-                for line in lines {
-                    println!("{}: {line}", path.display());
-                }
+        let mut lines = check_directories(dir, &path);
+        if let Err(more) = check_document(&path) {
+            lines.extend(more);
+        }
+        if lines.is_empty() {
+            println!("ok {}", path.display());
+        } else {
+            refused = true;
+            for line in lines {
+                println!("{}: {line}", path.display());
             }
         }
     }
@@ -88,6 +92,28 @@ fn find_contracts(dir: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Rule `directory` over the last two directories between `root` and the document, the
+/// `<toolset>/<version>` the build script embeds it under when `root` is `contracts/`.
+fn check_directories(root: &Path, path: &Path) -> Vec<String> {
+    let names: Vec<String> = path
+        .strip_prefix(root)
+        .ok()
+        .and_then(Path::parent)
+        .into_iter()
+        .flat_map(Path::components)
+        .map(|part| part.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let last: Vec<&str> = names
+        .iter()
+        .skip(names.len().saturating_sub(2))
+        .map(String::as_str)
+        .collect();
+    match validate::directories(&last) {
+        Ok(()) => Vec::new(),
+        Err(violations) => violations.iter().map(ToString::to_string).collect(),
+    }
 }
 
 fn check_document(path: &Path) -> Result<(), Vec<String>> {

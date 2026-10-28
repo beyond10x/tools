@@ -66,6 +66,34 @@ pub fn validate(contract: &Contract) -> Result<(), Vec<Violation>> {
     if found.is_empty() { Ok(()) } else { Err(found) }
 }
 
+/// Applies rule `directory` to the `<toolset>` and `<version>` directory names a document sits in:
+/// the build script makes each part of a constant and a string literal, and stops every crate
+/// building on a name outside `[a-z][a-z0-9-]*`.
+///
+/// # Errors
+///
+/// One violation per name outside the grammar, in the order given.
+pub fn directories(names: &[&str]) -> Result<(), Vec<Violation>> {
+    let found: Vec<Violation> = names
+        .iter()
+        .filter(|name| !is_directory_name(name))
+        .map(|name| Violation {
+            operation: DOCUMENT.to_string(),
+            property: "directory".to_string(),
+            message: format!(
+                "{name:?} is not [a-z][a-z0-9-]*, so the build script cannot embed the document"
+            ),
+        })
+        .collect();
+    if found.is_empty() { Ok(()) } else { Err(found) }
+}
+
+fn is_directory_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 type At<'a> = dyn FnMut(&str, &str, String) + 'a;
 
 fn check_types(types: &[TypeDecl], at: &mut At<'_>) {
@@ -335,7 +363,18 @@ pub fn is_capability(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_capability;
+    use super::{is_capability, is_directory_name};
+
+    #[test]
+    fn a_directory_name_is_lowercase_digits_and_hyphens_after_a_letter() {
+        assert!(is_directory_name("build-test2"));
+        assert!(is_directory_name("v1alpha1"));
+        assert!(!is_directory_name("build_test"));
+        assert!(!is_directory_name("v1.2"));
+        assert!(!is_directory_name("V1"));
+        assert!(!is_directory_name("1v"));
+        assert!(!is_directory_name(""));
+    }
 
     #[test]
     fn a_capability_is_two_or_more_dotted_lowercase_segments() {
