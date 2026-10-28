@@ -2,16 +2,14 @@ format: engineering-assertions-project/1
 timeout_seconds: 300
 commands:
   format:
-    executable: env
+    executable: cargo
     args:
-      - cargo
       - fmt
       - --all
       - --check
   lint:
-    executable: env
+    executable: cargo
     args:
-      - cargo
       - clippy
       - --workspace
       - --all-targets
@@ -20,9 +18,8 @@ commands:
       - -D
       - warnings
   contracts:
-    executable: env
+    executable: cargo
     args:
-      - cargo
       - run
       - --locked
       - --quiet
