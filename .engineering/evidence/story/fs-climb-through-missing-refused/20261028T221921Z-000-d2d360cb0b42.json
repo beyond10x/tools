@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T22:19:21Z",
+  "actor": "agent:takt-delivery",
+  "artifact": "story:fs-climb-through-missing-refused",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "takt approve repository.merge --by agent:takt-delivery at 687068c33db47c8072d95f186b5835e3b2806192",
+    "reference": "story-fs-climb-through-missing-refused-20261028T213041Z/authority.yaml"
+  }
+}
