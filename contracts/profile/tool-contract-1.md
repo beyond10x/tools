@@ -13,6 +13,12 @@ Harness names appear only under `renderings`, as generated output.
 
 One file, `contracts/<toolset>/<version>/contract.yaml`. Unknown keys are refused at every level.
 
+Rule `directory` (document-level): the `<toolset>` and `<version>` directory names, the last two
+directories between the walked directory and the document, are each in `[a-z][a-z0-9-]*`; another
+name is refused, naming it. The build script embeds each document under a constant made of both
+names and cannot embed any other, so a document the validator passes never stops the workspace
+from building.
+
 | key | required | value |
 |---|---|---|
 | `format` | yes | the literal `tool-contract/1`; another value is refused at parse |

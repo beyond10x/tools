@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T11:58:31Z",
+  "actor": "agent:takt",
+  "artifact": "story:contract-directory-names-validated",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "takt",
+    "reference": ".takt/cases/story-contract-directory-names-validated-20261028T115421Z/evidence/0005-test-result-7.json#sha256=d8cab48715984ba0cc0ee5fd234290d1bc6251fceec120c8716f2d347f4e6782&result=pass&revision=181b4b01c29f6bb776fffb520e78592f3c5663f5&producer=takt.tests-run"
+  }
+}

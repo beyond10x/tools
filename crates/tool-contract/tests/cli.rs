@@ -1,6 +1,7 @@
 //! `tool-contract validate <dir>`: exit 0 and `ok <path>` on the fixture, exit 1 naming the
 //! operation and the property on each seeded defect, a sentence and exit 0 on a directory with no
-//! documents, exit 1 when a sibling `scenarios/` leaves a property without a scenario.
+//! documents, exit 1 when a sibling `scenarios/` leaves a property without a scenario, exit 1 on
+//! a `<toolset>/<version>` directory name the build script cannot embed.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -151,6 +152,61 @@ fn validate_does_not_follow_a_fixture_link_that_points_at_its_own_parent() {
     assert!(stdout.contains("notes/contract.yaml"), "{stdout}");
     assert!(stdout.contains("other/contract.yaml"), "{stdout}");
     assert!(!stdout.contains("alias"), "{stdout}");
+}
+
+#[test]
+fn validate_refuses_a_toolset_or_version_directory_the_build_script_cannot_embed() {
+    // `build.rs` turns `contracts/<toolset>/<version>` into a constant and panics on a name
+    // outside `[a-z][a-z0-9-]*`, which stops every crate building, this validator included. A
+    // document `validate` passes must never do that.
+    for (toolset, version, named) in [
+        ("build_test", "v1alpha1", "build_test"),
+        ("web", "v1.2", "v1.2"),
+        ("web", "V1", "V1"),
+    ] {
+        let dir = scratch();
+        for (toolset, version) in [(toolset, version), ("code-editor", "v1alpha1")] {
+            let doc_dir = dir.path().join(toolset).join(version);
+            fs::create_dir_all(&doc_dir).expect("mkdir");
+            fs::copy(
+                here("tests/fixtures/notes/contract.yaml"),
+                doc_dir.join("contract.yaml"),
+            )
+            .expect("copy");
+        }
+        let output = validate(dir.path());
+        let all = text(&output);
+        assert_eq!(output.status.code(), Some(1), "{toolset}/{version}: {all}");
+        let prefix = format!("{toolset}/{version}/contract.yaml: ");
+        let refusal = all.lines().find(|line| line.contains(&prefix));
+        assert!(
+            refusal.is_some_and(|line| {
+                let message = &line[line.find(&prefix).expect("found") + prefix.len()..];
+                message.contains(named) && message.contains("[a-z][a-z0-9-]*")
+            }),
+            "{toolset}/{version}: {all}"
+        );
+        let beside = dir.path().join("code-editor/v1alpha1/contract.yaml");
+        let accepted = format!("ok {}", beside.display());
+        assert!(
+            all.lines().any(|line| line == accepted),
+            "a well-named document beside it is still accepted: {all}"
+        );
+    }
+}
+
+#[test]
+fn validate_accepts_toolset_and_version_directories_in_the_grammar() {
+    let dir = scratch();
+    let doc_dir = dir.path().join("build-test2/v1alpha1");
+    fs::create_dir_all(&doc_dir).expect("mkdir");
+    fs::copy(
+        here("tests/fixtures/notes/contract.yaml"),
+        doc_dir.join("contract.yaml"),
+    )
+    .expect("copy");
+    let output = validate(dir.path());
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output));
 }
 
 #[test]
