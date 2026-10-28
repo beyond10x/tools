@@ -1,0 +1,30 @@
+format: engineering-assertions-project/1
+timeout_seconds: 1800
+commands:
+  format:
+    executable: cargo
+    args:
+      - fmt
+      - --all
+      - --check
+  lint:
+    executable: cargo
+    args:
+      - clippy
+      - --workspace
+      - --all-targets
+      - --locked
+      - --
+      - -D
+      - warnings
+  contracts:
+    executable: cargo
+    args:
+      - run
+      - --locked
+      - --quiet
+      - -p
+      - b10x-tool-contract
+      - --
+      - validate
+      - contracts/

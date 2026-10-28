@@ -1,0 +1,15 @@
+format: engineering-gates/1
+language: canon-expr/1
+gates:
+  - id: format
+    text: The workspace is formatted.
+    assertions:
+      - 'process.succeeded("format")'
+  - id: lint
+    text: Clippy finds no warning in the workspace, its tests included.
+    assertions:
+      - 'process.succeeded("lint")'
+  - id: contracts
+    text: Every contract document under contracts/ validates.
+    assertions:
+      - 'process.succeeded("contracts")'
