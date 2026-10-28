@@ -2,13 +2,14 @@
 format: aep.planning-md/3
 id: story:fs-climb-through-missing-refused
 kind: story
-status: proposed
+status: active
 title: fs refuses a climb out of the workspace through a missing component as OutsideWorkspace
 relations:
 - decomposes: epic:tool-contracts
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T13:14:50Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-28T21:30:45Z", actor: "human:timo", revision: 4, executor: "agent:takt"}
 ---
 ## Outcome
 
