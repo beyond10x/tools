@@ -1,5 +1,5 @@
 format: engineering-assertions-project/1
-timeout_seconds: 1800
+timeout_seconds: 300
 commands:
   format:
     executable: cargo
