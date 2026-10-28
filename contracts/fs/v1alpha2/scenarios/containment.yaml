@@ -11,6 +11,15 @@ scenarios:
       error: fs.OutsideWorkspace
       output: {path: ../x}
       files: {a.txt: unchanged}
+  - name: a-climb-through-a-missing-directory-is-refused-as-outside-the-workspace
+    holds: [subjects]
+    fixture:
+      files: {a.txt: "x\n"}
+    call: {operation: fs.read, input: {path: missing/../../x}}
+    expect:
+      error: fs.OutsideWorkspace
+      output: {path: missing/../../x}
+      files: {a.txt: unchanged}
   - name: a-path-that-starts-at-the-filesystem-root-is-refused
     holds: [subjects]
     fixture:

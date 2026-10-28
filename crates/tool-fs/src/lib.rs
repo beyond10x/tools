@@ -54,7 +54,7 @@ mod tests;
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read as _};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
@@ -127,17 +127,21 @@ pub enum Mutation {
     /// The deadline never passes: `timeout_ms` is still refused above its maximum, and then
     /// never checked.
     IgnoreDeadline,
+    /// A path that does not exist is judged by its deepest ancestor found with `Path::parent`,
+    /// so a climb through a missing component (`missing/../../x`) is judged inside.
+    LexicalWalk,
 }
 
 impl Mutation {
     /// Every mutation, in declaration order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::NoReadCap,
         Self::NoTruncatedFlag,
         Self::PageDigest,
         Self::NoContainment,
         Self::NoCeilingCap,
         Self::IgnoreDeadline,
+        Self::LexicalWalk,
     ];
 
     /// The mutation's name in reports.
@@ -149,6 +153,7 @@ impl Mutation {
             Self::NoContainment => "no-containment",
             Self::NoCeilingCap => "no-ceiling-cap",
             Self::IgnoreDeadline => "ignore-deadline",
+            Self::LexicalWalk => "lexical-walk",
         }
     }
 }
@@ -234,9 +239,9 @@ impl Fs {
     ///
     /// Canonicalisation happens before the containment check, so a symlink or a `..` that leaves
     /// the workspace is refused by where it *lands*, not by how it is spelled. A path that does
-    /// not exist is refused by where it *would* land: its deepest existing ancestor is
-    /// canonicalised, and one outside the workspace is `OutsideWorkspace` rather than `NotFound`,
-    /// so `../x` is refused for climbing out whether or not there is an `x`.
+    /// not exist is refused by where it *would* land ([`would_land`]), and one outside the
+    /// workspace is `OutsideWorkspace` rather than `NotFound`, so `../x` is refused for climbing
+    /// out whether or not there is an `x`, and so is `missing/../../x`.
     fn resolve(&self, relative: &str) -> Result<PathBuf, FsError> {
         let candidate = self.root.join(relative);
         let outside = |resolved: &Path| {
@@ -252,15 +257,10 @@ impl Fs {
                 Ok(canonical)
             }
             Err(error) => {
-                let mut ancestor = candidate.as_path();
-                let lands = loop {
-                    if let Ok(resolved) = ancestor.canonicalize() {
-                        break Some(resolved);
-                    }
-                    match ancestor.parent() {
-                        Some(parent) => ancestor = parent,
-                        None => break None,
-                    }
+                let lands = if self.mutated_by(Mutation::LexicalWalk) {
+                    lexical_ancestor(&candidate)
+                } else {
+                    Some(would_land(&candidate))
                 };
                 if lands.as_deref().is_none_or(outside) {
                     return Err(FsError::OutsideWorkspace {
@@ -865,6 +865,41 @@ fn digest_file(path: &Path, deadline: &Deadline) -> io::Result<Option<String>> {
         digest.update(&buffer[..read]);
     }
     Ok(Some(hex(&digest.finalize())))
+}
+
+/// Where `path`, which does not canonicalise, would land: its components taken one at a time,
+/// each existing prefix canonicalised so a link in it is followed, and a `..` taken off the path
+/// built so far. A `..` after a component that does not exist climbs over that component, so
+/// `missing/../../x` lands beside the root, where `../x` does.
+fn would_land(path: &Path) -> PathBuf {
+    let mut lands = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                lands.pop();
+            }
+            Component::Normal(name) => {
+                let next = lands.join(name);
+                lands = next.canonicalize().unwrap_or(next);
+            }
+            Component::Prefix(_) | Component::RootDir => lands.push(component),
+        }
+    }
+    lands
+}
+
+/// The deepest ancestor of `path` that canonicalises, found with `Path::parent`: harness 0.13.3's
+/// walk, kept for the [`Mutation::LexicalWalk`] mutant. It is lexical, so the ancestor of
+/// `missing/../../x` is the root itself.
+fn lexical_ancestor(path: &Path) -> Option<PathBuf> {
+    let mut ancestor = path;
+    loop {
+        if let Ok(resolved) = ancestor.canonicalize() {
+            return Some(resolved);
+        }
+        ancestor = ancestor.parent()?;
+    }
 }
 
 /// `bytes` as lowercase hex.
