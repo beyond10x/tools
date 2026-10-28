@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:contract-directory-names-validated
 kind: story
-status: draft
+status: proposed
 title: tool-contract validate refuses a contract directory name the build script cannot embed
 relations:
 - decomposes: epic:tool-contracts
@@ -13,7 +13,9 @@ scope:
   path: crates/tool-contract/src/documents.rs
 - confidence: cited
   path: crates/tool-contract/src/validate.rs
-revision: 2
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T10:52:34Z", actor: "human:timo", revision: 3, executor: "agent:takt-proof"}
 ---
 ## Outcome
 
