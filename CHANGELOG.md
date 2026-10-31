@@ -6,12 +6,36 @@ the bare version.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-31
+
+The `fs` containment check refuses a climb out of the workspace through a missing directory, and the
+contract validator refuses directory names the build script cannot embed.
+
+### Added
+
+- Rule `directory` in the `tool-contract/1` profile and `tool_contract::validate::directories`: the
+  `<toolset>` and `<version>` directory names of a document are each in `[a-z][a-z0-9-]*`, and
+  `tool-contract validate` refuses another name, naming it. A document the validator passes can no
+  longer stop the workspace from building.
+- `tool_fs::Mutation::LexicalWalk`, a mutant that judges a missing path by its lexical ancestor, and
+  the `fs` v1alpha2 scenario
+  `a-climb-through-a-missing-directory-is-refused-as-outside-the-workspace` that kills it. Breaking
+  for a caller that matches `Mutation` exhaustively: `Mutation::ALL` is now seven entries.
+
 ### Changed
 
 - The design no longer plans a connector projection in tools (ADR 0103): Connectors publishes
   `tool-contract/1` documents for its operations, tools reads none of its descriptors, and the
   `connectors` port leaves the first set of ports. `docs/design/tool-contracts.md`
   § Connector contracts replaces § Connector projections. No code changes; none had been built.
+- `tool_contract::documents::all` documents its order: the byte order of the directory names, not
+  version precedence.
+
+### Fixed
+
+- `fs` refuses a path that climbs out of the workspace through a component that does not exist
+  (`missing/../../x`) as `OutsideWorkspace`; the walk now takes each `..` off the path built so far
+  instead of judging the lexical ancestor, which was the workspace root itself.
 
 ## [0.5.0] - 2026-10-23
 
